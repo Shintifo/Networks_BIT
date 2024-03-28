@@ -1,0 +1,215 @@
+%! Author = t
+%! Date = 3/26/24
+
+% Preamble
+\documentclass[12pt]{article}
+
+% Packages
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+
+
+
+\usepackage{fontspec}
+\usepackage[slantfont, boldfont]{xeCJK}
+
+
+
+
+% Formatting
+\titleformat{\section}[hang]{\fontsize{20}{24}\selectfont\filcenter}{\Roman{section}}{1em}{}
+
+\title{Networks Assignment\\ Chapter 3}
+\author{Braiko Timofei\\1820243088}
+\date{\today}
+\maketitle
+\newpage
+
+\begin{document}
+    \section{Task}\label{sec:task-1}
+
+    \subsection{Problem}
+        A bit stream 10011101 is transmitted using the standard CRC method described in the text.
+        The generator polynomial is $x^3$ + 1.
+        Show the actual bit string transmitted.
+        Suppose that the third bit from the left is inverted during transmission.
+        Show that this error is detected at the receiver’s end.
+        Give an example of bit errors in the bit string transmitted that will not be
+        detected by the receiver.
+
+        \subsection{Encoding}
+
+        The generator polynomial is $x^3+1 \longrightarrow$ 1001,
+        so we need to append 3 zeros at the end of data and calculate the remainder.
+
+        Thus:
+        %    Encoding
+        \[\arraycolsep=0.3em
+        \begin{array}{rrrrrrrrrrr@{\,}r|l}
+            1 & 0 & 0 & 1 & 1 & 1 & 0 & 1 & 0 & 0 & 0 & & \,1001 \\
+            \cline{13-10}
+            1 & 0 & 0 & 1 &   &   &   &   &   &   &   & & \,10001100     \\
+            \cline{1-4}
+            & 0 & 0 & 0 & 1 \\
+            & 0 & 0 & 0 & 0 \\
+            \cline{2-5}
+            & & 0 & 0 & 1 & 1 \\
+            & & 0 & 0 & 0 & 0 \\
+            \cline{3-6}
+            & & & 0 & 1 & 1 & 0 \\
+            & & & 0 & 0 & 0 & 0 \\
+            \cline{4-7}
+            & & & & 1 & 1 & 0 & 1 \\
+            & & & & 1 & 0 & 0 & 1 \\
+            \cline{5-8}
+            & & & & & 1 & 0 & 0 & 0 \\
+            & & & & & 1 & 0 & 0 & 1 \\
+            \cline{6-9}
+            & & & & & & 0 & 0 & 1 & 0 \\
+            & & & & & & 0 & 0 & 0 & 0 \\
+            \cline{7-10}
+            & & & & & & & 0 & 1 & 0 & 0 \\
+            & & & & & & & 0 & 0 & 0 & 0 \\
+            \cline{8-11}
+            & & & & & & & & 1 & 0 & 0
+        \end{array} \]
+
+        We obtain the 100 remainder.
+        Therefore, the actual transmitted data is:
+        \begin{center}
+            \boxed{ \underbrace{10011101}_{data}\underbrace{100}_{remainder} }
+        \end{center}
+
+        \subsection{Error Detecting}
+        We consider that third bit from left side is inverted, receiver gets 10111101100 message instead.
+        The decoding will be the following:
+
+        \[\arraycolsep=0.3em
+        \begin{array}{rrrrrrrrrrr@{\,}r|l}
+            1 & 0 & 1 & 1 & 1 & 1 & 0 & 1 & 1 & 0 & 0 & & \,1001 \\
+            \cline{13-10}
+            1 & 0 & 0 & 1 &   &   &   &   &   &   &   & & \,10101000     \\
+            \cline{1-4}
+            & 0 & 1 & 0 & 1 \\
+            & 0 & 0 & 0 & 0 \\
+            \cline{2-5}
+            & & 1 & 0 & 1 & 1 \\
+            & & 1 & 0 & 0 & 1 \\
+            \cline{3-6}
+            & & & 0 & 1 & 0 & 0 \\
+            & & & 0 & 0 & 0 & 0 \\
+            \cline{4-7}
+            & & & & 1 & 0 & 0 & 1 \\
+            & & & & 1 & 0 & 0 & 1 \\
+            \cline{5-8}
+            & & & & & 0 & 0 & 0 & 1 \\
+            & & & & & 0 & 0 & 0 & 0 \\
+            \cline{6-9}
+            & & & & & & 0 & 0 & 1 & 0 \\
+            & & & & & & 0 & 0 & 0 & 0 \\
+            \cline{7-10}
+            & & & & & & & 0 & 1 & 0 & 0 \\
+            & & & & & & & 0 & 0 & 0 & 0 \\
+            \cline{8-11}
+            & & & & & & & & 1 & 0 & 0
+        \end{array}
+        \]
+
+        As the remainder is not equal to zero, the error will be detected.
+    \newpage
+
+
+    \section{Task}\label{sec:task-2}
+
+    \subsection{Problem}
+        A channel has a bit rate of 4 kbps and a propagation delay of 20 msec.
+        For what frame sizes does stop-and-wait give an efficiency of at least 50 $\%$?
+
+        \subsection{Solution}
+        Let assume that F is frame size.
+        The formula fot the channel utilization is the following:
+
+        \begin{equation}
+            U = \frac{T_d}{T_d + 2 \times P_d}
+        \end{equation}
+
+        As we are given a propagation delay: $20 msec = 0.02sec$, transmission delay: $F/(4\times10^3)sec$,
+        and channel efficiency has to be at least 50$\%$ we obtain the following inequality:
+
+        \begin{subequations}
+            \begin{equation}
+                0.5 \leq \frac{F/(4\times10^3)}{F/(4\times10^3) + 2 \times 0.02} = \frac{F}{F + 0.16 \times 10^3}
+            \end{equation}
+
+            \begin{equation}
+                0.5(F + 160) \leq F
+            \end{equation}
+
+            \begin{equation}
+                F \geq 160
+            \end{equation}
+        \end{subequations}
+
+        Hence, the frame size should be at least 160 bit.
+
+        \paragraph{Answer:} 160 bit
+    \newpage
+
+
+    \section{Task}\label{sec:task-3}
+    \subsection{Problem}
+        Suppose you are designing a sliding window protocol for a 1-Mbps point-to-point link to the
+        stationary satellite evolving around the Earth at $3\times10^4$ km altitude.
+        Assuming that each frame carries 1 kB of data,
+        what is the minimum number of bits you need for the sequence number in the following cases?
+        Assume the speed of light is $3\times10^8$ meters per second.
+
+        \begin{enumerate}[label=(\alph*)]
+            \item Receive Window Size = 1.
+            \item Receive Window Size = Send Window Size
+        \end{enumerate}
+
+    \subsection{Solution}
+
+        For the maximum sender window size we obtain the following:
+            \begin{gather}
+                SWS = \frac{2 \times T_d}{P_d} = \\
+                = \frac{2 \times (3\times10^7)/(3\times10^8)}{(8\times10^3)/10^6} \\
+                = \frac{10^3}{4\times10} = 25
+            \end{gather}
+        \paragraph{A)} As RWS = 1, we need 26 sequence numbers per frame.\\
+                 Therefore, we need $\lceil \log_{2}(26) \rceil = 5$ bits for sequence numbers.
+        \paragraph{B)} As RWS = SWS, we need 50 sequence numbers per frame.\\
+                 Therefore, we need $\lceil \log_{2}(50) \rceil = 6$ bits for sequence numbers.
+
+        \paragraph{Answers:} A) 5 bits\\ \hspace*{62} B) 6 bits
+
+    \newpage
+
+
+    \section{Task}\label{sec:task-4}
+    \subsection{Problem}
+    Suppose that we run the sliding window algorithm with SWS = 5 and RWS = 3,
+        and no out-of-order arrivals
+        \begin{enumerate}[label=(\alph*)]
+            \item Find the smallest value for MaxSeqNum.
+            You may assume that it suffices to find the smallest MaxSeqNum such
+            that if DATA[MaxSeqNum] is in the receive window, then DATA[0] can no longer arrive.
+            \item Give an example showing that MaxSeqNum − 1 is not sufficient.
+            \item State a general rule for the minimum MaxSeqNum in terms of SWS and RWS.
+        \end{enumerate}
+
+
+    \subsection{Solution}
+        \paragraph{A)} MaxSeqNum = RWS + SWS = 8
+        \paragraph{B)} If we have MaxSeqNum = RWS + SWS - 1 = 7, receiver waiting to get Data[7],
+    but old data like Data[0] may still arrive.
+    Dividing 7 and 0 by module such MaxSeqNum, receiver cannot distinguish them.
+        \paragraph{C)} The general rule for MaxSeqNum might be:
+        \begin{center}
+               \textbf{MaxSeqNum >= RWS + SWS}
+        \end{center}
+
+\end{document}
