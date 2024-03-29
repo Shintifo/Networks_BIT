@@ -8,15 +8,8 @@
 \usepackage{amsmath}
 \usepackage{enumitem}
 \usepackage{titlesec}
-
-
-
-
-\usepackage{fontspec}
-\usepackage[slantfont, boldfont]{xeCJK}
-
-
-
+\usepackage[table]{xcolor}
+\usepackage{subcaption,xcolor,lipsum}
 
 % Formatting
 \titleformat{\section}[hang]{\fontsize{20}{24}\selectfont\filcenter}{\Roman{section}}{1em}{}
@@ -83,7 +76,7 @@
         \end{center}
 
         \subsection{Error Detecting}
-        We consider that third bit from left side is inverted, receiver gets 10111101100 message instead.
+        We consider that third bit from left side is inverted, so receiver gets 10111101100 message instead.
         The decoding will be the following:
 
         \[\arraycolsep=0.3em
@@ -129,7 +122,7 @@
 
         \subsection{Solution}
         Let assume that F is frame size.
-        The formula fot the channel utilization is the following:
+        The formula of channel efficiency is the following:
 
         \begin{equation}
             U = \frac{T_d}{T_d + 2 \times P_d}
@@ -203,13 +196,31 @@
 
 
     \subsection{Solution}
-        \paragraph{A)} MaxSeqNum = RWS + SWS = 8
-        \paragraph{B)} If we have MaxSeqNum = RWS + SWS - 1 = 7, receiver waiting to get Data[7],
-    but old data like Data[0] may still arrive.
+        \paragraph{A)} MaxSeqNum = RWS + SWS = 8.
+                At provided picture depicts 8 frames that are transmitted.
+                Green frames the receiver just get from the sender, while the blue one are sending.
+                The minimum required sequential number is 8 need to avoid misconsumption.
+        \begin{table}[h]
+                \centering
+                    \begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|}
+                        \hline
+                        \dots & \cellcolor{green!30}3 & \cellcolor{green!30}4
+                        & \cellcolor{green!30}5 & \cellcolor{blue!30}6 & \cellcolor{blue!30}7
+                        & \cellcolor{blue!30}8 & \cellcolor{blue!30}9 & \cellcolor{blue!30}10 & \dots \\
+                        \hline
+                    \end{tabular}
+                \caption{Green - Reciever Window, Blue - Receiver Window}
+                \label{tab:my_table}
+        \end{table}
+
+        \paragraph{B)} If we have MaxSeqNum = RWS + SWS - 1 = 7, the receiver might wait to get the Data[7] packet.
+        However, ACK[0] didn't arrive to the sender.
+        Thus, raises timeout and sender sends Data[0] again.
+        As we have MaxSeqNum = 7, the receiver is not able to distinguish them at all.
     Dividing 7 and 0 by module such MaxSeqNum, receiver cannot distinguish them.
-        \paragraph{C)} The general rule for MaxSeqNum might be:
+        \paragraph{C)} The general rule for MaxSeqNum have to be:
         \begin{center}
-               \textbf{MaxSeqNum >= RWS + SWS}
+               $\bf MaxSeqNum \geq RWS + SWS$
         \end{center}
 
 \end{document}
