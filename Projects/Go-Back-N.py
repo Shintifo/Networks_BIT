@@ -1,4 +1,3 @@
-import datetime
 import os
 import time
 import zlib
@@ -13,16 +12,20 @@ from exceptions import InvalidPDUException, NACKException, NoConnectionException
 #       and host1 cannot send 2 files in parallel to host2
 
 # TODO change const
-TIMER_ACK = 5
-TIMER = 2
+TIMER_ACK = 1111
+TIMER = 11111
 
 CONNECTION_ATTEMPTS = 5
 TIMEOUT_NUMBER = 5
 
+# TODO frame size might be bigger
 HEADER_SIZE = 1
-MESSAGE_SIZE = 10
 CHECKSUM_SIZE = 4
-FRAME_SIZE = HEADER_SIZE + CHECKSUM_SIZE + MESSAGE_SIZE
+# MESSAGE_SIZE = 10
+# FRAME_SIZE = HEADER_SIZE + CHECKSUM_SIZE + MESSAGE_SIZE
+
+MESSAGE_SIZE = 40
+MAX_FRAME_SIZE = MESSAGE_SIZE + 20
 
 STANDARD_WS = 3
 HOST1_ADDR = ('127.0.0.1', 5555)
@@ -36,6 +39,14 @@ class FrameType(Enum):
     ACK = 'a'
 
 
+# Max size of frame = 8 + filename + filesize, 8 + ws + data
+
+# Handshake: header|WS|checksum -> 7 + ws
+# Start: header|filename|filesize|checksum -> 8 + filename + filesize
+# Data: header|seqno|data|checksum -> 10 + data
+# ACK: seqno|ACK -> 4 + ws
+# Syn ACK:  SYN|ACK -> 7
+# Start ACK: filename|ACK -> 4 + filename
 class PDU:
     def __init__(self, data=None):
         self.data: bytes = data
@@ -64,7 +75,7 @@ class PDU:
         # TODO how to define number of bytes for checksum????
         return zlib.adler32(data).to_bytes(CHECKSUM_SIZE, byteorder='big')
 
-    def pack(self, data: str | bytes, frame_type: FrameType) -> 'PDU':
+    def pack(self, data, frame_type: FrameType) -> 'PDU':
         def make_header():
             header = b''
             match frame_type:
@@ -90,10 +101,7 @@ class PDU:
         return cal_checksum == self.checksum
 
     def unpack(self) -> bytes:
-        if not self.check():
-            raise InvalidPDUException("Checksum mismatch!")
-        message = self.data[:self.size]
-        return message
+        return self.data[:self.size]
 
 
 # TODO close socket
@@ -104,12 +112,12 @@ class Socket:
         self.sock.bind(home_address)
         self.receiver_address = address
 
-    def recframe(self):
+    def recframe(self) -> PDU:
         try:
-            data, addr = self.sock.recvfrom(FRAME_SIZE)
+            data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
             frame = PDU(data)
-            message = frame.unpack()
-            return message
+            # message = frame.unpack()
+            return frame
         except InvalidPDUException as e:
             print(e)
             raise NACKException()
@@ -125,10 +133,12 @@ class Host:
     def __init__(self, address, ws=STANDARD_WS):
         self.address = address
         self.ws = ws
-        self.connections: {str: {}} = {}
-        self.hosts_ws: {str: int} = {}
+        self.connections: {tuple: {}} = {}
+        # TODO why I didn't use it?
+        self.hosts_ws: {tuple: int} = {}
         self.files = {}
         self.receive_thread = None
+        self.next_seqno: {tuple: int} = {}
 
     def add_connection(self, host_address: tuple[str, int]):
         if host_address in self.connections.keys():
@@ -143,12 +153,17 @@ class Host:
         self.receive_thread = Thread(target=self.receive, args=(host_address,))
         self.receive_thread.start()
 
-    def handle_message(self, message: bytes, sender_address: tuple[str, int]):
+    def handle_message(self, frame: PDU, sender_address: tuple[str, int]):
         # TODO ADD SOME DATA TO WS
         # handshake: header|WS
         # start:     header|filename|file_size
         # data:      header|seqno|data
         # ack:       header|data|ACK
+        if not frame.check():
+            print("Mismatch checksum!")
+            return
+
+        message = frame.unpack()
         header = FrameType(message[:HEADER_SIZE].decode())
         match header:
             case FrameType.ACK:
@@ -156,8 +171,9 @@ class Host:
                 data = data.decode('utf-8')
                 try:
                     data = int(data)
-                    if data == self.files[sender_address]['seqno']:
-                        # Stop timer -> activate the event "Get ACK"
+                    if data == self.next_seqno[sender_address]:
+                        self.next_seqno[sender_address] += 1
+                        self.next_seqno[sender_address] %= self.ws
                         self.connections[sender_address]['GetACK'].set()
                 except ValueError:
                     self.connections[sender_address]['GetACK'].set()
@@ -189,6 +205,7 @@ class Host:
                     return
 
                 self.files[sender_address]["seqno"] += 1
+                self.files[sender_address]["seqno"] %= self.hosts_ws[sender_address]
                 self.files[sender_address]["file"].write(data)
                 self.files[sender_address]["rec_size"] += len(data)
 
@@ -204,6 +221,7 @@ class Host:
         timeouts_number = 0
         while True:
             try:
+                # TODO NACK? -> пиздос
                 data = self.connections[host_address]["socket"].recframe()
                 self.handle_message(data, host_address)
                 timeouts_number = 0
@@ -215,7 +233,7 @@ class Host:
 
     def await_ack(self, address: tuple[str, int], passed_time: int = 0):
         if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
-            print("ACK!")
+            # print("ACK!")
             self.connections[address]['GetACK'].clear()
         else:
             print("NACK!")
@@ -233,26 +251,29 @@ class Host:
             raise NoConnectionException
 
         file_size = os.path.getsize(file)
-        start_frame = PDU().pack(f"{file}_send|{file_size}", FrameType.START)
+        start_frame = PDU().pack(f"send_{file}|{file_size}", FrameType.START)
         data_chunks = [start_frame]
         with open(file, "rb") as f:
             for i in range((file_size + MESSAGE_SIZE - 1) // MESSAGE_SIZE):
                 data = f.read(MESSAGE_SIZE)
                 seqno = i % self.ws
-                data_chunks.append(f"{seqno}|{data}")
+                frame_data = PDU().pack(f"{seqno}|".encode() + data, FrameType.DATA)
+                data_chunks.append(frame_data)
 
         wait_frames_ack = 0
         i = 0
-        while i <= len(data_chunks):
+        self.next_seqno[address] = 0
+        while i < len(data_chunks):
             try:
                 if wait_frames_ack == self.ws:
-                    seqno = (i + 1) % self.ws
+                    seqno = i % self.ws
                     passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
                     self.await_ack(address, passed_time)
+                    # print(f"ACK {seqno}")
                     wait_frames_ack -= 1
 
-                data_frame = PDU().pack(data_chunks[i], FrameType.DATA)
-                self.connections[address]['socket'].send(data_frame)
+                self.connections[address]['socket'].send(data_chunks[i])
+                # print(f"Send {i} frame out of {len(data_chunks)}")
                 self.connections[address]['start_time'][i % self.ws] = round(time.time())
                 wait_frames_ack += 1
                 i += 1
@@ -260,6 +281,7 @@ class Host:
                 i -= self.ws
                 wait_frames_ack = 0
                 print("Timeout frame!")
+        print("Done!")
 
 
 # TODO handle ACK
@@ -305,7 +327,11 @@ if __name__ == '__main__':
         connector.create_connection(host1, host2)
     except LimitSentAttemptsException:
         print("No Connection established")
+        exit()
     except ExistingConnectionException as e:
         print(e)
 
-    # host1.send_file("pic.img", host2.address)
+    start = time.time()
+
+    host1.send_file("pic.jpg", host2.address)
+    print(time.time()-start)
