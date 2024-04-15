@@ -39,14 +39,6 @@ class FrameType(Enum):
     ACK = 'a'
 
 
-# Max size of frame = 8 + filename + filesize, 8 + ws + data
-
-# Handshake: header|WS|checksum -> 7 + ws
-# Start: header|filename|filesize|checksum -> 8 + filename + filesize
-# Data: header|seqno|data|checksum -> 10 + data
-# ACK: seqno|ACK -> 4 + ws
-# Syn ACK:  SYN|ACK -> 7
-# Start ACK: filename|ACK -> 4 + filename
 class PDU:
     def __init__(self, data=None):
         self.data: bytes = data
@@ -116,7 +108,6 @@ class Socket:
         try:
             data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
             frame = PDU(data)
-            # message = frame.unpack()
             return frame
         except InvalidPDUException as e:
             print(e)
@@ -134,7 +125,6 @@ class Host:
         self.address = address
         self.ws = ws
         self.connections: {tuple: {}} = {}
-        # TODO why I didn't use it?
         self.hosts_ws: {tuple: int} = {}
         self.files = {}
         self.receive_thread = None
@@ -229,14 +219,13 @@ class Host:
                 if timeouts_number == TIMEOUT_NUMBER:
                     #  TODO Break connection
                     print("Break the connection!")
+                    exit()
                 timeouts_number += 1
 
     def await_ack(self, address: tuple[str, int], passed_time: int = 0):
         if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
-            # print("ACK!")
             self.connections[address]['GetACK'].clear()
         else:
-            print("NACK!")
             raise Timeout
 
     def send_sync(self, ws: int, address: tuple[str, int]):
@@ -269,11 +258,11 @@ class Host:
                     seqno = i % self.ws
                     passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
                     self.await_ack(address, passed_time)
-                    # print(f"ACK {seqno}")
+                    print(f"ACK {seqno}")
                     wait_frames_ack -= 1
 
                 self.connections[address]['socket'].send(data_chunks[i])
-                # print(f"Send {i} frame out of {len(data_chunks)}")
+                print(f"Send {i}({i % self.ws}) frame out of {len(data_chunks)}")
                 self.connections[address]['start_time'][i % self.ws] = round(time.time())
                 wait_frames_ack += 1
                 i += 1
@@ -284,7 +273,6 @@ class Host:
         print("Done!")
 
 
-# TODO handle ACK
 class Connector:
     def __init__(self):
         pass
@@ -315,7 +303,6 @@ class Connector:
 
 
 # TODO User Input
-# TODO make different paths for different hosts/change file name after receiving
 # TODO make Keyboard stop
 if __name__ == '__main__':
     host1 = Host(HOST1_ADDR, ws=4)
@@ -332,6 +319,5 @@ if __name__ == '__main__':
         print(e)
 
     start = time.time()
-
     host1.send_file("pic.jpg", host2.address)
-    print(time.time()-start)
+    print(time.time() - start)
