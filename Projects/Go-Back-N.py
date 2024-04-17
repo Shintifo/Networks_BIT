@@ -21,7 +21,7 @@ TIMEOUT_NUMBER = 5
 HEADER_SIZE = 1
 CHECKSUM_SIZE = 4
 
-MESSAGE_SIZE = 400
+MESSAGE_SIZE = 4000
 MAX_FRAME_SIZE = MESSAGE_SIZE + 20
 
 STANDARD_WS = 3
@@ -43,7 +43,7 @@ class PDU:
 		self.checksum = b''
 		if self.data is not None:
 			self.message = self.data[HEADER_SIZE: -CHECKSUM_SIZE]
-			self.header = self.data[HEADER_SIZE:]
+			self.header = self.data[:HEADER_SIZE]
 			self.checksum = self.data[-CHECKSUM_SIZE:]
 
 	@staticmethod
