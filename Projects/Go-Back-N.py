@@ -151,7 +151,7 @@ class Host:
 			print("Mismatch checksum!")
 			return
 
-		# TODO handle when split is not possible
+		# TODO handle split error
 		header, message = frame.unpack()
 		match header:
 			case FrameType.ACK:
@@ -191,28 +191,34 @@ class Host:
 				seqno, data = message.split(b'|', 1)
 				seqno = int(seqno.decode())
 
-				if seqno != self.files[sender_address]["seqno"]:
+				# If seqno is smth random:
+				# 	- bigger than expected
+				# 	- invalid (<0)
+				# We consider that we didn't receive anything
+				if seqno > self.files[sender_address]["seqno"] or seqno < 0:
 					return
 
-				self.files[sender_address]["seqno"] += 1
-				self.files[sender_address]["seqno"] %= self.hosts_ws[sender_address]
-				self.files[sender_address]["file"].write(data)
-				self.files[sender_address]["rec_size"] += len(data)
+				# We record the data if only we got frame with expected seqno
+				# Otherwise, it's a duplicate
+				if seqno == self.files[sender_address]["seqno"]:
+					self.files[sender_address]["seqno"] += 1
+					self.files[sender_address]["seqno"] %= self.hosts_ws[sender_address]
+					self.files[sender_address]["file"].write(data)
+					self.files[sender_address]["rec_size"] += len(data)
+
+					if self.files[sender_address]["rec_size"] == self.files[sender_address]["size"]:
+						print("Close file")
+						self.files[sender_address]["file"].close()
+						self.files.pop(sender_address)
 
 				self.connections[sender_address]['socket'].send(PDU.ACK(seqno))
-
-				if self.files[sender_address]["rec_size"] == self.files[sender_address]["size"]:
-					print("Close file")
-					self.files[sender_address]["file"].close()
-					self.files.pop(sender_address)
 
 	def receive(self, host_address: tuple[str, int]):
 		# TODO check -> May be not true
 		# We have a thread per connection, so timeouts_number is local variable
-		timeouts_number = 0
+		timeouts_number = 0  # If there is no messages for a long time -> Break connection
 		while True:
 			try:
-				# TODO NACK? -> пиздос
 				data = self.connections[host_address]["socket"].recframe()
 				self.handle_message(data, host_address)
 				timeouts_number = 0
@@ -222,6 +228,8 @@ class Host:
 					print("Break the connection!")
 					exit()
 				timeouts_number += 1
+			except NACKException:
+				timeouts_number = 0
 
 	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
 		if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
@@ -273,6 +281,12 @@ class Host:
 				wait_frames_ack = 0
 				print("Timeout frame!")
 		print("Done!")
+
+	def thread_wait_ack(self, address):
+		if self.connections[address]['GetACK'].wait(TIMER_ACK):
+			self.connections[address]['GetACK'].clear()
+		else:
+			raise Timeout
 
 
 class Connector:
