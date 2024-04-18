@@ -128,7 +128,7 @@ class Host:
 		self.hosts_ws: {tuple: int} = {}
 		self.files = {}
 		self.receive_thread = None
-		self.next_seqno: {tuple: int} = {}
+		self.next_seqno_ack: {tuple: int} = {}
 
 	def add_connection(self, host_address: tuple[str, int]):
 		if host_address in self.connections.keys():
@@ -137,7 +137,7 @@ class Host:
 
 		self.connections[host_address] = {
 			"socket": Socket(self.address, host_address),
-			"GetACK": [Event() for _ in self.ws],
+			"GetACK": [Event() for _ in range(self.ws)],
 			"start_time": [0 for _ in range(self.ws)]
 		}
 		self.receive_thread = Thread(target=self.receive, args=(host_address,))
@@ -160,9 +160,9 @@ class Host:
 				try:
 					data = int(data)
 					# It's Data ACK with seqno
-					if data == self.next_seqno[sender_address]:
-						self.next_seqno[sender_address] += 1
-						self.next_seqno[sender_address] %= self.ws
+					if data == self.next_seqno_ack[sender_address]:
+						self.next_seqno_ack[sender_address] += 1
+						self.next_seqno_ack[sender_address] %= self.ws
 						self.connections[sender_address]['GetACK'][data].set()
 				except ValueError:
 					# It's handshake ("SYN") or start (filename)
@@ -259,74 +259,64 @@ class Host:
 				frame_data = PDU().pack(f"{seqno}|".encode() + data, FrameType.DATA)
 				data_chunks.append(frame_data)
 
-		wait_frames_ack = 0
 		i = 0
-		self.next_seqno[address] = 0
-		# TODO try to make waiting ACKs as new thread
+		# Required for receiving ACKs
+		self.next_seqno_ack[address] = 0
 
 		error_queue = queue.Queue()
 		threads_arr = [Thread() for _ in range(self.ws)]
 
 		while i < len(data_chunks):
-			try:
-				# Check the number of active threads.
-				# If we have less than WS -> we have an error, or received ACK
-				# We receive an ACK if only it is expected ACK
-				if sum(t.isAlive() for t in threads_arr) == self.ws:
-					continue
-				# Considering timer > RTT, so we can get ACK2 before timer for ACK1 ends up.
-				# It means if we got ACK2 before getting ACK1, the timeout for ACK2 raise
+			# Check the number of active threads.
+			# If we have less than WS -> we have an error, or received ACK
+			# We receive an ACK if only it is expected ACK
+			if sum(t.is_alive() for t in threads_arr) == self.ws:
+				continue
+			# Considering timer > RTT, so we can get ACK2 before timer for ACK1 ends up.
+			# It means if we got ACK2 before getting ACK1, the timeout for ACK2 raise
 
-				# Check queue -> if we have error arise
-				# TODO what if we got ACK1, but timer for ACK2 ends before next line?
-				# We will return back to early
-				# Hence we have to send seqno to the error, and somehow add to i to make this seqno last in window
-				if not error_queue.empty():
-					# TODO race condition
-					error_seqno = error_queue.get_nowait()
+			# Check queue for error raised in thread
+			if not error_queue.empty():
+				error_seqno = error_queue.get_nowait()
 
-					# TODO check
-					i += abs(i % self.ws - error_seqno)
+				# We consider that we can obtain error (timeout or NACk) only in last frame in window
+				# Example:
+				# 0 | 1 2 3 | 4
+				# We got an error at frame 3 and got ACKs for 1 and 2 frames
+				# It happened simultaneously, so we check for error before trying to send next frames
+				# In order to not resend frames 1 and 2, we need firstly move the window
+				if i % self.ws > error_seqno:
+					surplus = self.ws - abs(i % self.ws - error_seqno)
+				else:
+					surplus = abs(i % self.ws - error_seqno)
+				i += surplus
 
-					error_queue = queue.Queue()
-					i = max(0, i - self.ws)
-					print("Timeout frame!")
-					continue
-
-				# Send frame
-				self.connections[address]['socket'].send(data_chunks[i])
-				print(f"Send {i}({i % self.ws}) frame out of {len(data_chunks)}")
-				i += 1
-				# Start timer
-				threads_arr[i % self.ws] = Thread(
-					target=self.thread_wait_ack,
-					args=(i % self.ws, address, error_queue)
-				)
-				threads_arr[i % self.ws].start()
-
-			# if wait_frames_ack == self.ws:
-			# 	seqno = i % self.ws
-			# 	passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
-			# 	self.await_ack(address, passed_time)
-			# 	print(f"ACK {seqno}")
-			# 	wait_frames_ack -= 1
-			#
-			# self.connections[address]['socket'].send(data_chunks[i])
-			# print(f"Send {i}({i % self.ws}) frame out of {len(data_chunks)}")
-			# self.connections[address]['start_time'][i % self.ws] = round(time.time())
-			# wait_frames_ack += 1
-			# i += 1
-			except Timeout:
-				i -= self.ws
+				# TODO Stop all threads (race condition)
+				# We will just wait till the end of all threads (too long)
+				for t in threads_arr:
+					t.join() if t.isAlive() else ...
+				error_queue = queue.Queue()
+				i = max(0, i - self.ws)
 				print("Timeout frame!")
+				continue
+
+			# Send frame
+			self.connections[address]['socket'].send(data_chunks[i])
+			print(f"Send {i}({i % self.ws}) frame out of {len(data_chunks)}")
+			i += 1
+			# Start timer
+			threads_arr[i % self.ws] = Thread(
+				target=self.thread_wait_ack,
+				args=(i % self.ws, address, error_queue)
+			)
+			threads_arr[i % self.ws].start()
 		print("Done!")
 
 	def thread_wait_ack(self, seqno, address, error_queue):
 		try:
 			self.await_ack(address, seqno)
-			print(f"ACK {address}")
+			# print(f"ACK {address}")
 		except Timeout:
-			# TODO race condition
 			error_queue.put(seqno)
 
 
@@ -376,5 +366,5 @@ if __name__ == '__main__':
 		print(e)
 
 	start = time.time()
-	host1.send_file("pic.jpg", host2.address)
+	host1.send_file("vid.MP4", host2.address)
 	print(time.time() - start)
