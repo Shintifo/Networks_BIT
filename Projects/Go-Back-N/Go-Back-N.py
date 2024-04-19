@@ -7,7 +7,7 @@ from enum import Enum
 from threading import Thread, Event
 from socket import socket, AF_INET, SOCK_DGRAM, timeout
 
-from exceptions import InvalidPDUException, NACKException, NoConnectionException, \
+from exceptions import NACKException, NoConnectionException, \
 	LimitSentAttemptsException, Timeout, ExistingConnectionException
 
 # NOTE: I consider that between 2 hosts we can create only 1 connection
@@ -103,20 +103,15 @@ class PDU:
 
 # TODO close socket
 class Socket:
-	def __init__(self, home_address: tuple[str, int], address: tuple[str, int]):
+	def __init__(self, address: tuple[str, int]):
 		self.sock = socket(AF_INET, SOCK_DGRAM)
 		self.sock.settimeout(TIMER)
-		self.sock.bind(home_address)
 		self.receiver_address = address
 
 	def recframe(self) -> PDU:
-		try:
-			data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
-			frame = PDU(data)
-			return frame
-		except InvalidPDUException as e:
-			print(e)
-			raise NACKException()
+		data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
+		frame = PDU(data)
+		return frame
 
 	def send(self, frame: PDU):
 		self.sock.sendto(frame.data, self.receiver_address)
@@ -125,30 +120,32 @@ class Socket:
 		self.sock.close()
 
 
-class Host:
-	def __init__(self, address, ws=STANDARD_WS):
-		self.address = address
-		self.ws = ws
-		self.connections: {tuple: {}} = {}
-		self.files = {}
-		self.receive_thread = None
-		self.next_seqno: {tuple: int} = {}
+# Сокет у нас дуплекс
+# Но у нам нельзя делать больше одного сокета на получение
+# Но нам необходимо несколько сокетов на отправку
+# Решение:
+# Сделать один сокет который будет получать
+# И сделать N других сокетов на получение
 
-	def add_connection(self, host_address: tuple[str, int]):
-		if host_address in self.connections.keys():
-			print("Already connected")
-			raise ExistingConnectionException
 
-		self.connections[host_address] = {
-			"ws": 0,
-			"socket": Socket(self.address, host_address),
-			"GetACK": Event(),
-			"start_time": [0 for _ in range(self.ws)]
-		}
-		self.receive_thread = Thread(target=self.receive, args=(host_address,))
-		self.receive_thread.start()
+class Receiver:
+	def __init__(self, host):
+		self.sock = socket(AF_INET, SOCK_DGRAM)
+		self.host = host
+		self.sock.bind(host.address)
 
-	def handle_message(self, frame: PDU, sender_address: tuple[str, int]):
+		self.next_seq = {}
+
+	def receive(self) -> tuple[PDU, tuple[str, int]]:
+		while True:
+			try:
+				data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
+				frame = PDU(data)
+				self.handle_message(frame, addr)
+			except timeout:
+				...
+
+	def handle_message(self, frame: PDU, addr: tuple[str, int]):
 		# handshake: WS
 		# start:     filename|file_size
 		# data:      seqno|data
@@ -160,6 +157,13 @@ class Host:
 		# TODO handle split error
 		header, message = frame.unpack()
 		match header:
+			case FrameType.HANDSHAKE:
+				# It is new connection we have to create the connection
+				self.host.add_connection(addr)
+				self.host.connections[addr]['ws'] = int(message.decode())
+				# Send ACK with our WS (#2 handshake step)
+				self.host.connections[addr]['socket'].send(PDU.SYNACK(self.host.ws))
+
 			case FrameType.SYN:
 				# Host 1          Host 2
 				# ... -> WS1 ->  -> ...
@@ -167,28 +171,9 @@ class Host:
 				# ... ->  SYN -> -> ...
 				if len(message) != 3:  # -> SYN|WS
 					ws = int(message.split(b'|', 1)[1].decode())
-					self.connections[sender_address]['ws'] = ws
-					self.send_frame(PDU.SYNACK(), sender_address)
-				self.connections[sender_address]['GetACK'].set()
-			case FrameType.ACK:
-				data = message.decode('utf-8')
-				try:
-					data = int(data)
-					# It's Data ACK with seqno
-					if data == self.next_seqno[sender_address]:
-						self.next_seqno[sender_address] += 1
-						self.next_seqno[sender_address] %= self.ws
-						self.connections[sender_address]['GetACK'].set()
-				except ValueError:
-					# It's start (filename)
-					self.connections[sender_address]['GetACK'].set()
-
-			case FrameType.HANDSHAKE:
-				# It is new connection we have to create the connection
-				# self.add_connection(sender_address)
-
-				self.connections[sender_address]['ws'] = int(message.decode())
-				self.connections[sender_address]['socket'].send(PDU.SYNACK(self.ws))
+					self.host.connections[addr]['ws'] = ws
+					self.host.send_frame(PDU.SYNACK(), addr)
+				self.host.connections[addr]['GetACK'].set()
 
 			case FrameType.START:
 				filename, file_size = message.split(b'|', 1)
@@ -198,57 +183,95 @@ class Host:
 				if os.path.exists(file_path):
 					os.remove(file_path)
 
-				self.files[sender_address] = {
+				self.files[addr] = {
 					"file": open(file_path, 'wb'),
 					"size": int(file_size),
 					"seqno": 0,
 					"rec_size": 0
 				}
-				self.connections[sender_address]['socket'].send(PDU.Start_ACK(filename))
+				self.connections[addr]['socket'].send(PDU.Start_ACK(filename))
+
+			case FrameType.ACK:
+				data = message.decode('utf-8')
+				try:
+					data = int(data)
+					# It's Data ACK with seqno
+					if data == self.next_seqno[addr]:
+						self.next_seqno[addr] += 1
+						self.next_seqno[addr] %= self.ws
+						self.connections[addr]['GetACK'].set()
+				except ValueError:
+					# It's start (filename)
+					self.connections[addr]['GetACK'].set()
 
 			case FrameType.DATA:
 				seqno, data = message.split(b'|', 1)
 				seqno = int(seqno.decode())
-
 				# If seqno is smth random:
 				# 	- bigger than expected
 				# 	- invalid (<0)
 				# We consider that we didn't receive anything
-				if seqno > self.files[sender_address]["seqno"] or seqno < 0:
+				if seqno > self.files[addr]["seqno"] or seqno < 0:
 					return
 
 				# We record the data if only we got frame with expected seqno
 				# Otherwise, it's a duplicate
-				if seqno == self.files[sender_address]["seqno"]:
-					self.files[sender_address]["seqno"] += 1
-					self.files[sender_address]["seqno"] %= self.connections[sender_address]['ws']
-					self.files[sender_address]["file"].write(data)
-					self.files[sender_address]["rec_size"] += len(data)
+				if seqno == self.files[addr]["seqno"]:
+					self.files[addr]["seqno"] += 1
+					self.files[addr]["seqno"] %= self.connections[addr]['ws']
+					self.files[addr]["file"].write(data)
+					self.files[addr]["rec_size"] += len(data)
 
-					if self.files[sender_address]["rec_size"] == self.files[sender_address]["size"]:
+					if self.files[addr]["rec_size"] == self.files[addr]["size"]:
 						print("Close file")
-						self.files[sender_address]["file"].close()
-						self.files.pop(sender_address)
+						self.files[addr]["file"].close()
+						self.files.pop(addr)
 
-				self.connections[sender_address]['socket'].send(PDU.ACK(seqno))
+				self.connections[addr]['socket'].send(PDU.ACK(seqno))
 
-	def receive(self, host_address: tuple[str, int]):
-		# TODO check -> May be not true
-		# We have a thread per connection, so timeouts_number is local variable
-		timeouts_number = 0  # If there is no messages for a long time -> Break connection
-		while True:
-			try:
-				data = self.connections[host_address]["socket"].recframe()
-				self.handle_message(data, host_address)
-				timeouts_number = 0
-			except timeout:
-				if timeouts_number == TIMEOUT_NUMBER:
-					#  TODO Break connection
-					print("Break the connection!")
-					exit()
-				timeouts_number += 1
-			except NACKException:
-				timeouts_number = 0
+
+class Sender:
+	def __init__(self, address: tuple[str, int]):
+		self.sock = socket(AF_INET, SOCK_DGRAM)
+		self.sock.settimeout(TIMER)
+		self.receiver_address = address
+
+	def send_frame(self):
+		...
+
+	def send_file(self):
+		...
+
+
+class Host:
+	def __init__(self, address, ws=STANDARD_WS):
+		self.address = address
+		self.ws = ws
+
+		self.connections: {tuple: {}} = {}
+		self.files = {}
+		self.next_seqno: {tuple: int} = {}
+
+		self.receiver = Receiver(self.address, self.connections)
+		self.receive_thread = Thread(target=self.receive_messages())
+		self.receive_thread.start()
+
+	def add_connection(self, receiver_addr: tuple[str, int]):
+		if receiver_addr in self.connections.keys():
+			print("Already connected")
+			raise ExistingConnectionException
+		self.connections[receiver_addr] = {
+			"ws": 0,
+			"socket": Sender(receiver_addr),
+			"GetACK": Event(),
+			"start_time": [0 for _ in range(self.ws)]  # Stores time when frame was send
+		}
+
+	def receive_messages(self):
+		frame, addr = self.receiver.receive()
+		self.handle_message(frame, addr)
+
+
 
 	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
 		if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
@@ -310,7 +333,7 @@ class Host:
 			raise Timeout
 
 
-class Connecor:
+class Connector:
 	def __init__(self):
 		pass
 
@@ -344,6 +367,8 @@ class Connecor:
 # TODO Error generator
 # TODO Error handling
 
+
+# TODO В идеале, как у каждого хоста должен быть один не занятый сокет. Который ждет
 def config_parse(config_file):
 	global TIMER
 	global MESSAGE_SIZE
@@ -412,6 +437,6 @@ if __name__ == '__main__':
 	host1.send_sync(host2.address)
 	print("Handshake!")
 
-	# start = time.time()
-	# host1.send_file("vid.MP4", host2.address)
-	# print(time.time() - start)
+# start = time.time()
+# host1.send_file("vid.MP4", host2.address)
+# print(time.time() - start)
