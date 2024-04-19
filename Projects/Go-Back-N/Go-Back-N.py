@@ -1,3 +1,4 @@
+import argparse
 import configparser
 import os
 import time
@@ -13,8 +14,8 @@ from exceptions import InvalidPDUException, NACKException, NoConnectionException
 #       and host1 cannot send 2 files in parallel to host2
 
 # TODO change const
-TIMER_ACK = 1111
-TIMER = 11111
+TIMER_ACK = 5
+TIMER = 5
 
 CONNECTION_ATTEMPTS = 5
 TIMEOUT_NUMBER = 5
@@ -35,6 +36,7 @@ class FrameType(Enum):
 	START = 's'
 	DATA = 'd'
 	ACK = 'a'
+	SYN = 'y'
 
 
 class PDU:
@@ -53,8 +55,11 @@ class PDU:
 		return PDU().pack(message, FrameType.ACK)
 
 	@staticmethod
-	def SYNACK() -> 'PDU':
-		return PDU().pack("SYN", FrameType.ACK)
+	def SYNACK(ws: int = None) -> 'PDU':
+		message = "SYN"
+		if ws is not None:
+			message += f"|{ws}"
+		return PDU().pack(message, FrameType.SYN)
 
 	@staticmethod
 	def Start_ACK(filename: str) -> 'PDU':
@@ -62,21 +67,21 @@ class PDU:
 		return PDU().pack(message, FrameType.ACK)
 
 	def calc_checksum(self, data) -> bytes:
-		# TODO how to define number of bytes for checksum????
 		return zlib.adler32(data).to_bytes(CHECKSUM_SIZE, byteorder='big')
 
 	def pack(self, data, frame_type: FrameType) -> 'PDU':
 		def make_header():
-			header = b''
 			match frame_type:
 				case FrameType.HANDSHAKE:
-					header = b'h'
+					header = FrameType.HANDSHAKE.value.encode()
 				case FrameType.START:
-					header = b's'
+					header = FrameType.START.value.encode()
 				case FrameType.DATA:
-					header = b'd'
+					header = FrameType.DATA.value.encode()
 				case FrameType.ACK:
-					header = b'a'
+					header = FrameType.ACK.value.encode()
+				case FrameType.SYN:
+					header = FrameType.SYN.value.encode()
 				case _:
 					raise ValueError(f"Unknown frame type: {frame_type}")
 			return header + data
@@ -125,7 +130,6 @@ class Host:
 		self.address = address
 		self.ws = ws
 		self.connections: {tuple: {}} = {}
-		self.hosts_ws: {tuple: int} = {}
 		self.files = {}
 		self.receive_thread = None
 		self.next_seqno: {tuple: int} = {}
@@ -136,6 +140,7 @@ class Host:
 			raise ExistingConnectionException
 
 		self.connections[host_address] = {
+			"ws": 0,
 			"socket": Socket(self.address, host_address),
 			"GetACK": Event(),
 			"start_time": [0 for _ in range(self.ws)]
@@ -147,7 +152,7 @@ class Host:
 		# handshake: WS
 		# start:     filename|file_size
 		# data:      seqno|data
-		# ack:       data ("SYN", filename, seqno)
+		# ack:       data ("SYN", "SYN|{ws}", filename, seqno)
 		if not frame.check():
 			print("Mismatch checksum!")
 			return
@@ -155,6 +160,16 @@ class Host:
 		# TODO handle split error
 		header, message = frame.unpack()
 		match header:
+			case FrameType.SYN:
+				# Host 1          Host 2
+				# ... -> WS1 ->  -> ...
+				# ... <- SYN|WS2 <- ...
+				# ... ->  SYN -> -> ...
+				if len(message) != 3:  # -> SYN|WS
+					ws = int(message.split(b'|', 1)[1].decode())
+					self.connections[sender_address]['ws'] = ws
+					self.send_frame(PDU.SYNACK(), sender_address)
+				self.connections[sender_address]['GetACK'].set()
 			case FrameType.ACK:
 				data = message.decode('utf-8')
 				try:
@@ -165,12 +180,15 @@ class Host:
 						self.next_seqno[sender_address] %= self.ws
 						self.connections[sender_address]['GetACK'].set()
 				except ValueError:
-					# It's handshake ("SYN") or start (filename)
+					# It's start (filename)
 					self.connections[sender_address]['GetACK'].set()
 
 			case FrameType.HANDSHAKE:
-				self.hosts_ws[sender_address] = int(message.decode())
-				self.connections[sender_address]['socket'].send(PDU.SYNACK())
+				# It is new connection we have to create the connection
+				# self.add_connection(sender_address)
+
+				self.connections[sender_address]['ws'] = int(message.decode())
+				self.connections[sender_address]['socket'].send(PDU.SYNACK(self.ws))
 
 			case FrameType.START:
 				filename, file_size = message.split(b'|', 1)
@@ -203,7 +221,7 @@ class Host:
 				# Otherwise, it's a duplicate
 				if seqno == self.files[sender_address]["seqno"]:
 					self.files[sender_address]["seqno"] += 1
-					self.files[sender_address]["seqno"] %= self.hosts_ws[sender_address]
+					self.files[sender_address]["seqno"] %= self.connections[sender_address]['ws']
 					self.files[sender_address]["file"].write(data)
 					self.files[sender_address]["rec_size"] += len(data)
 
@@ -238,10 +256,13 @@ class Host:
 		else:
 			raise Timeout
 
-	def send_sync(self, ws: int, address: tuple[str, int]):
+	def send_frame(self, frame, address):
+		self.connections[address]['socket'].send(frame)
+
+	def send_sync(self, address: tuple[str, int]):
 		if address not in self.connections.keys():
 			raise NoConnectionException
-		frame = PDU().pack(str(ws), FrameType.HANDSHAKE)
+		frame = PDU().pack(str(self.ws), FrameType.HANDSHAKE)
 		self.connections[address]['socket'].send(frame)
 		self.await_ack(address)
 
@@ -289,7 +310,7 @@ class Host:
 			raise Timeout
 
 
-class Connector:
+class Connecor:
 	def __init__(self):
 		pass
 
@@ -303,9 +324,9 @@ class Connector:
 		while True:
 			try:
 				print("SYNC1")
-				host1.send_sync(host1.ws, host2.address)
+				host1.send_sync(host2.address)
 				print("SYNC2")
-				host2.send_sync(host2.ws, host1.address)
+				host2.send_sync(host1.address)
 				print("Successful Handshake!")
 				break
 			except Timeout as e:
@@ -324,33 +345,73 @@ class Connector:
 # TODO Error handling
 
 def config_parse(config_file):
+	global TIMER
+	global MESSAGE_SIZE
 	config = configparser.ConfigParser()
 	config.read(config_file)
 
-	UDPPort = config.get('UDPSettings', 'UDPPort')
-	DataSize = config.get('PDUSettings', 'DataSize')
-	ErrorRate = config.get('PDUSettings', 'ErrorRate')
-	LostRate = config.get('PDUSettings', 'LostRate')
-	SWSize = config.get('WindowSettings', 'SWSize')
-	InitSeqNo = config.get('SequenceSettings', 'InitSeqNo')
-	Timeout = config.get('TimeoutSettings', 'Timeout')
+	UDPPort = int(config.get('UDPSettings', 'UDPPort'))
+	DataSize = int(config.get('PDUSettings', 'DataSize'))
+	SWSize = int(config.get('WindowSettings', 'SWSize'))
+	Timeout = int(config.get('TimeoutSettings', 'Timeout'))
 
+	LostRate = int(config.get('PDUSettings', 'LostRate'))
+	InitSeqNo = int(config.get('SequenceSettings', 'InitSeqNo'))
+	ErrorRate = int(config.get('PDUSettings', 'ErrorRate'))
+
+	MESSAGE_SIZE = int(DataSize)
+	host = Host(("localhost", UDPPort), SWSize)
+	TIMER = int(Timeout) // 1000
+	return host
+
+
+def create_host():
+	parser = argparse.ArgumentParser()
+	parser.add_argument("config_file")
+	args = parser.parse_args()
+	return config_parse(args.config_file)
+
+
+def parse_command(command):
+	parser = argparse.ArgumentParser(prog='PROG', description='Send file or establish connection')
+	subparsers = parser.add_subparsers(dest='command')
+	connect_parser = subparsers.add_parser('Connect', help='Establish a connection')
+	connect_parser.add_argument('address_port', help='Address and port in format address:port')
+	send_parser = subparsers.add_parser('Send', help='Send a file')
+	send_parser.add_argument('file_path', help='Path to the file')
+	send_parser.add_argument('address_port', help='Address and port in format address:port')
+	args = parser.parse_args(command.split())
+	return args.command, args
+
+
+def main():
+	host = create_host()
+
+	print("Welcome!\nPossible commands:\n"
+		  "1. Establish a connection - 'Connect {address:port}'\n"
+		  "2. Send file to - 'Send {file_path} {address:port}'")
+	while True:
+		command = input("Enter command: ")
+		cmd_type, args = parse_command(command)
+		ip, port = args.address_port.split(':')
+		address = ip, int(port)
+		if cmd_type == 'Connect':
+			host.add_connection(address)
+			host.send_sync(address)
+		# TODO handshake
+		elif cmd_type == 'Send':
+			host.send_file(args.file_path, address)
 
 
 if __name__ == '__main__':
 	host1 = Host(HOST1_ADDR, ws=4)
 	host2 = Host(HOST2_ADDR, ws=5)
 
-	connector = Connector()
+	host1.add_connection(host2.address)
+	host2.add_connection(host1.address)
+	host1.send_sync(host2.address)
+	print("Handshake!")
 
-	try:
-		connector.create_connection(host1, host2)
-	except LimitSentAttemptsException:
-		print("No Connection established")
-		exit()
-	except ExistingConnectionException as e:
-		print(e)
-
-	start = time.time()
-	host1.send_file("vid.MP4", host2.address)
-	print(time.time() - start)
+	# start = time.time()
+	# host1.send_file("vid.MP4", host2.address)
+	# print(time.time() - start)
