@@ -1,3 +1,4 @@
+import configparser
 import os
 import time
 import zlib
@@ -261,7 +262,6 @@ class Host:
 		wait_frames_ack = 0
 		i = 0
 		self.next_seqno[address] = 0
-		# TODO try to make waiting ACKs as new thread
 		while i < len(data_chunks):
 			try:
 				if wait_frames_ack == self.ws:
@@ -318,8 +318,25 @@ class Connector:
 # TODO STAYING ALIVE
 
 
-# TODO User Input
+# TODO User Input - configuration file
 # TODO make Keyboard stop
+# TODO Error generator
+# TODO Error handling
+
+def config_parse(config_file):
+	config = configparser.ConfigParser()
+	config.read(config_file)
+
+	UDPPort = config.get('UDPSettings', 'UDPPort')
+	DataSize = config.get('PDUSettings', 'DataSize')
+	ErrorRate = config.get('PDUSettings', 'ErrorRate')
+	LostRate = config.get('PDUSettings', 'LostRate')
+	SWSize = config.get('WindowSettings', 'SWSize')
+	InitSeqNo = config.get('SequenceSettings', 'InitSeqNo')
+	Timeout = config.get('TimeoutSettings', 'Timeout')
+
+
+
 if __name__ == '__main__':
 	host1 = Host(HOST1_ADDR, ws=4)
 	host2 = Host(HOST2_ADDR, ws=5)
@@ -335,5 +352,5 @@ if __name__ == '__main__':
 		print(e)
 
 	start = time.time()
-	host1.send_file("pic.jpg", host2.address)
+	host1.send_file("vid.MP4", host2.address)
 	print(time.time() - start)
