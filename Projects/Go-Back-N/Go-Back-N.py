@@ -7,7 +7,7 @@ from enum import Enum
 from threading import Thread, Event
 from socket import socket, AF_INET, SOCK_DGRAM, timeout
 
-from exceptions import NACKException, NoConnectionException, \
+from exceptions import NoConnectionException, \
 	LimitSentAttemptsException, Timeout, ExistingConnectionException
 
 # NOTE: I consider that between 2 hosts we can create only 1 connection
@@ -136,14 +136,94 @@ class Receiver:
 
 		self.next_seq = {}
 
-	def receive(self) -> tuple[PDU, tuple[str, int]]:
+	def receive(self):
 		while True:
 			try:
 				data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
 				frame = PDU(data)
-				self.handle_message(frame, addr)
-			except timeout:
+				self.host.handle_frame(frame, addr)
+			# return frame, addr
+			except timeout or ExistingConnectionException:
 				...
+
+
+class Connection:
+	def __init__(self, addr, ws):
+		self.addr = addr
+		self.file_info = {}
+		self.ws = ws
+		self.ack_event = Event()
+		self.start_time = [0 for _ in range(self.ws)]
+
+
+class Sender:
+	def __init__(self, address: tuple[str, int]):
+		self.sock = socket(AF_INET, SOCK_DGRAM)
+		self.sock.settimeout(TIMER)
+		self.receiver_address = address
+
+	def send_frame(self):
+		...
+
+	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
+		if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
+			self.connections[address]['GetACK'].clear()
+		else:
+			raise Timeout
+
+
+
+	def send_packages(self, packages: list[PDU], addr):
+		# Number of waiting frames
+		wait_frames_ack = 0
+		i = 0  # Number of frame to send
+
+		self.next_seqno[addr] = 0  # TODO ??? -> Required to receive ACKs
+
+		while i < len(packages):
+			try:
+				if wait_frames_ack == self.ws:
+					seqno = i % self.ws
+					passed_time = round(time.time()) - self.connections[addr]['start_time'][seqno]
+					self.await_ack(addr, passed_time)
+					print(f"ACK {seqno}")
+					wait_frames_ack -= 1
+
+				self.connections[addr]['socket'].send(packages[i])
+				print(f"Send {i}({i % self.ws}) frame out of {len(packages)}")
+				self.connections[addr]['start_time'][i % self.ws] = round(time.time())
+				wait_frames_ack += 1
+				i += 1
+			except Timeout:
+				i -= self.ws
+				wait_frames_ack = 0
+				print("Timeout frame!")
+		print("Done!")
+
+
+class Host:
+	def __init__(self, address, ws=STANDARD_WS):
+		self.address = address
+		self.ws = ws
+
+		self.connections: {tuple: {}} = {}
+		self.files = {}
+		self.next_seqno: {tuple: int} = {}
+
+		self.receiver = Receiver(self)
+		self.receive_thread = Thread(target=self.receiver.receive)
+		self.receive_thread.start()
+
+	def add_connection(self, receiver_addr: tuple[str, int]):
+		if receiver_addr in self.connections.keys():
+			print("Already connected")
+			raise ExistingConnectionException
+		self.connections[receiver_addr] = {
+			"ws": 0,
+			"socket": Sender(receiver_addr),
+			"GetACK": Event(),
+			"start_time": [0 for _ in range(self.ws)]  # Stores time when frame was send
+		}
 
 	def handle_message(self, frame: PDU, addr: tuple[str, int]):
 		# handshake: WS
@@ -159,10 +239,10 @@ class Receiver:
 		match header:
 			case FrameType.HANDSHAKE:
 				# It is new connection we have to create the connection
-				self.host.add_connection(addr)
-				self.host.connections[addr]['ws'] = int(message.decode())
+				self.add_connection(addr)
+				self.connections[addr]['ws'] = int(message.decode())
 				# Send ACK with our WS (#2 handshake step)
-				self.host.connections[addr]['socket'].send(PDU.SYNACK(self.host.ws))
+				self.connections[addr]['socket'].send(PDU.SYNACK(self.ws))
 
 			case FrameType.SYN:
 				# Host 1          Host 2
@@ -171,9 +251,9 @@ class Receiver:
 				# ... ->  SYN -> -> ...
 				if len(message) != 3:  # -> SYN|WS
 					ws = int(message.split(b'|', 1)[1].decode())
-					self.host.connections[addr]['ws'] = ws
-					self.host.send_frame(PDU.SYNACK(), addr)
-				self.host.connections[addr]['GetACK'].set()
+					self.connections[addr]['ws'] = ws
+					self.connections[addr]['socket'].send(PDU.SYNACK())
+				self.connections[addr]['GetACK'].set()
 
 			case FrameType.START:
 				filename, file_size = message.split(b'|', 1)
@@ -229,58 +309,19 @@ class Receiver:
 
 				self.connections[addr]['socket'].send(PDU.ACK(seqno))
 
+	def send_f(self, file, addr):
+		# Prepare file frames for sending
+		file_size = os.path.getsize(file)
+		start_frame = PDU().pack(f"send_{file}|{file_size}", FrameType.START)
+		data_chunks = [start_frame]
+		with open(file, "rb") as f:
+			for i in range((file_size + MESSAGE_SIZE - 1) // MESSAGE_SIZE):
+				data = f.read(MESSAGE_SIZE)
+				seqno = i % self.ws
+				frame_data = PDU().pack(f"{seqno}|".encode() + data, FrameType.DATA)
+				data_chunks.append(frame_data)
 
-class Sender:
-	def __init__(self, address: tuple[str, int]):
-		self.sock = socket(AF_INET, SOCK_DGRAM)
-		self.sock.settimeout(TIMER)
-		self.receiver_address = address
-
-	def send_frame(self):
-		...
-
-	def send_file(self):
-		...
-
-
-class Host:
-	def __init__(self, address, ws=STANDARD_WS):
-		self.address = address
-		self.ws = ws
-
-		self.connections: {tuple: {}} = {}
-		self.files = {}
-		self.next_seqno: {tuple: int} = {}
-
-		self.receiver = Receiver(self.address, self.connections)
-		self.receive_thread = Thread(target=self.receive_messages())
-		self.receive_thread.start()
-
-	def add_connection(self, receiver_addr: tuple[str, int]):
-		if receiver_addr in self.connections.keys():
-			print("Already connected")
-			raise ExistingConnectionException
-		self.connections[receiver_addr] = {
-			"ws": 0,
-			"socket": Sender(receiver_addr),
-			"GetACK": Event(),
-			"start_time": [0 for _ in range(self.ws)]  # Stores time when frame was send
-		}
-
-	def receive_messages(self):
-		frame, addr = self.receiver.receive()
-		self.handle_message(frame, addr)
-
-
-
-	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
-		if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
-			self.connections[address]['GetACK'].clear()
-		else:
-			raise Timeout
-
-	def send_frame(self, frame, address):
-		self.connections[address]['socket'].send(frame)
+		self.sender.send_packages(data_chunks)
 
 	def send_sync(self, address: tuple[str, int]):
 		if address not in self.connections.keys():
