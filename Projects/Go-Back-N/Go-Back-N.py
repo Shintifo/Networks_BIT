@@ -1,4 +1,5 @@
 import configparser
+import copy
 import os
 import random
 import time
@@ -13,8 +14,8 @@ from exceptions import InvalidPDUException, NACKException, NoConnectionException
 # NOTE: I consider that between 2 hosts we can create only 1 connection
 #       and host1 cannot send 2 files in parallel to host2
 
-TIMER_ACK = 2
-TIMER = 2
+TIMER = -1
+PACKETS = 0
 
 CONNECTION_ATTEMPTS = 5
 TIMEOUT_NUMBER = 5
@@ -86,7 +87,7 @@ class PDU:
 
 		self.checksum = self.calc_checksum(data)
 		self.data = data + self.checksum
-		self.header = self.data
+		self.header = self.data[:HEADER_SIZE]
 		return self
 
 	def check(self) -> bool:
@@ -159,7 +160,6 @@ class Host:
 		# start:     filename|file_size
 		# data:      seqno|data
 		# ack:       data ("SYN", "SYN|{ws}", filename, seqno)
-		# print(f"rec {frame.unpack()}")
 		if not frame.check():
 			print(f"Mismatch checksum!")
 			return
@@ -174,14 +174,11 @@ class Host:
 					if data == self.next_seqno[sender_address]:
 						self.next_seqno[sender_address] += 1
 						self.next_seqno[sender_address] %= self.seqmod
-						print(f"Next seqno is {self.next_seqno[sender_address]}")
 						while True:
 							if self.connections[sender_address]['GetACK'].is_set():
 								continue
 							break
 						self.connections[sender_address]['GetACK'].set()
-				# else:
-				# 	print(f"Expected:{self.next_seqno[sender_address]}, got {data}")
 				except ValueError:
 					# It's start (filename) and SYN
 					self.connections[sender_address]['GetACK'].set()
@@ -218,16 +215,12 @@ class Host:
 				if seqno == self.files[sender_address]["seqno"]:
 					self.files[sender_address]["seqno"] += 1
 					self.files[sender_address]["seqno"] %= self.connections[sender_address]['ws']
-					# print(f"Old: {seqno}, New:{self.files[sender_address]['seqno']}")
 					self.files[sender_address]["file"].write(data)
-					print(f"Write to file {seqno}")
 					self.files[sender_address]["rec_size"] += len(data)
-					# print(f"{self.files[sender_address]["rec_size"]} out of {self.files[sender_address]["size"]}")
 					if self.files[sender_address]["rec_size"] == self.files[sender_address]["size"]:
 						print("Close file")
 						self.files[sender_address]["file"].close()
 						self.files.pop(sender_address)
-				print("Send ACK")
 				self.send_frame(PDU.ACK(seqno), sender_address)
 
 	def receive(self, host_address: tuple[str, int]):
@@ -246,7 +239,7 @@ class Host:
 				timeouts_number = 0
 
 	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
-		if self.connections[address]['GetACK'].wait(TIMER_ACK - passed_time):
+		if self.connections[address]['GetACK'].wait(TIMER - passed_time):
 			self.connections[address]['GetACK'].clear()
 		else:
 			raise Timeout
@@ -258,19 +251,21 @@ class Host:
 		self.send_frame(frame, address)
 		self.await_ack(address)
 
-	def send_frame(self, frame: PDU, addr, i=777):
-		lost = random.randint(1, self.lost_rate)
-		error = random.randint(1, self.error_rate)
-		if lost == 1:
-			lost = random.randint(1, self.lost_rate)
-			if lost == 1:
-				print(f"Lost! {i} - {frame.data}")
-				return
-		# if error == 1:
-		# 	print(frame.data[:-CHECKSUM_SIZE])
-		# 	print(f"Error!")
-		# 	frame.error()
-		self.connections[addr]['socket'].send(frame)
+	def send_frame(self, frame: PDU, addr):
+		lost = random.randint(0, self.lost_rate)
+		error = random.randint(0, self.error_rate)
+		global PACKETS
+		PACKETS += 1
+		if lost == 0:
+			print(f"Lost!")
+			return
+		if error == 0:
+			copy_frame = copy.deepcopy(frame)
+			copy_frame.error()
+			self.connections[addr]['socket'].send(copy_frame)
+			print(f"Error!")
+		else:
+			self.connections[addr]['socket'].send(frame)
 
 	def send_file(self, file: str, address: tuple[str, int]):
 		if address not in self.connections.keys():
@@ -289,25 +284,28 @@ class Host:
 		wait_frames_ack = 0
 		i = 0
 		self.next_seqno[address] = 0
+		step_back = self.ws
 		while i <= len(data_chunks):
 			try:
 				if i != len(data_chunks):
 					print(f"Send {i}({i % self.seqmod}) frame out of {len(data_chunks) - 1}")
-					self.send_frame(data_chunks[i], address, i)
+					self.send_frame(data_chunks[i], address)
 					self.connections[address]['start_time'][i % self.seqmod] = round(time.time())
 					wait_frames_ack += 1
 					i += 1
 				if wait_frames_ack == self.ws or i == len(data_chunks):
-					seqno = (i-1) % self.seqmod
+					seqno = (i - 1) % self.seqmod
 					passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
 					self.await_ack(address, passed_time)
-					# print(f"Get ACK {seqno}")
+					print(f"Get ACK {seqno}")
 					wait_frames_ack -= 1
+					if i == len(data_chunks):
+						step_back -= 1
 					if wait_frames_ack == 0 and i == len(data_chunks):
 						break
 
 			except Timeout:
-				i -= self.ws
+				i -= step_back
 				wait_frames_ack = 0
 				print(f"Timeout frame!")
 
@@ -340,37 +338,30 @@ class Connector:
 					raise LimitSentAttemptsException
 
 
-def config_parse(config_file):
+# TODO parameters
+def create_host(config_file):
 	global TIMER
 	global MESSAGE_SIZE
 	config = configparser.ConfigParser()
 	config.read(config_file)
 
-	UDPPort = int(config.get('UDPSettings', 'UDPPort'))
-	DataSize = int(config.get('PDUSettings', 'DataSize'))
-	SWSize = int(config.get('WindowSettings', 'SWSize'))
-	Timeout = int(config.get('TimeoutSettings', 'Timeout'))
+	UDPPort = config.getint('UDPSettings', 'UDPPort')
+	SWSize = config.getint('WindowSettings', 'SWSize')
+	Timeout = config.getint('TimeoutSettings', 'Timeout')
+	LostRate = config.getint('PDUSettings', 'LostRate')
+	ErrorRate = config.getint('PDUSettings', 'ErrorRate')
 
-	LostRate = int(config.get('PDUSettings', 'LostRate'))
-	InitSeqNo = int(config.get('SequenceSettings', 'InitSeqNo'))
-	ErrorRate = int(config.get('PDUSettings', 'ErrorRate'))
-
+	InitSeqNo = config.getint('SequenceSettings', 'InitSeqNo')
+	DataSize = config.getint('PDUSettings', 'DataSize')
 	MESSAGE_SIZE = int(DataSize)
 	host = Host(("localhost", UDPPort), SWSize, LostRate, InitSeqNo, ErrorRate)
-	TIMER = int(Timeout) // 1000
+	# TODO Make timer local
+	TIMER = int(Timeout) / 1000
 	return host
 
 
-def create_host(a):
-	return config_parse(a)
-
-
 def host1_script(host):
-	T = "test.txt"
-	P = "pic.jpg"
-	V = "vid.MP4"
-	host.send_file(P, ("localhost", 8803))
-	time.sleep(0.1)
+	host.send_file("vid.MP4", ("localhost", 8803))
 
 
 def host2_script(host):
@@ -387,4 +378,4 @@ if __name__ == '__main__':
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
 	thread1.start()
-# thread2.start()
+	thread2.start()
