@@ -392,4 +392,4 @@ if __name__ == '__main__':
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
 	thread1.start()
-	# thread2.start()
+	thread2.start()
