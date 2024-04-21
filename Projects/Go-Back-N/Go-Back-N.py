@@ -33,7 +33,6 @@ class FrameType(Enum):
 	START = 's'
 	DATA = 'd'
 	ACK = 'a'
-	SYN = 'y'
 
 
 class PDU:
@@ -77,8 +76,6 @@ class PDU:
 					header = FrameType.DATA.value.encode()
 				case FrameType.ACK:
 					header = FrameType.ACK.value.encode()
-				case FrameType.SYN:
-					header = FrameType.SYN.value.encode()
 				case _:
 					raise ValueError(f"Unknown frame type: {frame_type}")
 			self.header = header
@@ -129,10 +126,10 @@ class Socket:
 
 
 class Host:
-	def __init__(self, address, ws, LostRate, InitSeqNo, ErrorRate):
-		self.lost_rate = LostRate
-		self.InitSeqNo = InitSeqNo
-		self.error_rate = ErrorRate
+	def __init__(self, address, ws, lost_rate, init_seqno, error_rate):
+		self.lost_rate = lost_rate
+		self.InitSeqNo = init_seqno
+		self.error_rate = error_rate
 
 		self.address = address
 		self.ws = ws
@@ -314,7 +311,6 @@ class Host:
 					if wait_frames_ack == 0 and i == len(data_chunks):
 						break
 
-
 			except Timeout:
 				i -= self.ws
 				wait_frames_ack = 0
@@ -396,4 +392,4 @@ if __name__ == '__main__':
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
 	thread1.start()
-# thread2.start()
+	# thread2.start()
