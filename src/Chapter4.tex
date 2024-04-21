@@ -1,0 +1,274 @@
+%! Author = t
+%! Date = 4/21/24
+
+% Preamble
+\documentclass[11pt]{article}
+
+% Packages
+\usepackage{amsmath}
+\usepackage{titlesec}
+\usepackage{enumitem}
+
+\titleformat{\section}[hang]{\fontsize{20}{24}\selectfont\filcenter}{\Roman{section}}{1em}{}
+
+\title{Networks Assignment\\ Chapter 4}
+\author{Braiko Timofei\\1820243088}
+\date{\today}
+\maketitle
+\newpage
+
+
+% Document
+\begin{document}
+    \section{Task}\label{sec:task-1}
+    Firstly, we need to calculate the RTT:
+    \begin{equation}
+        RTT = 2 \times P_d = \frac{2 \times 1}{2 \times 10^5} = 10^{-5}
+    \end{equation}
+    \begin{equation}
+        L = 10^9 \times 10^{-5} = 10^4
+    \end{equation}
+    \paragraph{Answer:} 10^4 bits
+    \newpage
+
+
+    \section{Task}\label{sec:task-2}
+
+    \subsection{A}
+    A chooses 0 × T, B chooses 1 × T, 2 × T, or 3 × T (A wins) \\
+    A chooses 1 × T, B chooses 2 × T or 3 × T (A wins)\\
+    \paragraph{Answer:} Wins/Total = 5/8 = 0.625
+
+    \subsection{B}
+
+    A chooses 0 × T, B chooses 1 × T, 2 × T, ., 7 × T (A wins) \\
+    A chooses 1 × T, B chooses 2 × T, 3 × T, ., 7 × T (A wins) \\
+    A chooses 2 × T, B chooses 3 × T, 4 × T, ., 7 × T (A wins) \\
+    A chooses 3 × T, B chooses 4 × T, 5 × T, 6 × T, 7 × T (A wins)
+    \paragraph{Answer:} Wins/Total = 22/32 = 0.6875
+
+    \newpage
+
+
+    \section{Task}\label{sec:task-3}
+    \begin{itemize}
+        \item[(a)] A sends to C:
+
+        \begin{table}[ht]
+            \centering
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B1:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    1    & A           \\
+                    3    & C           \\
+                    \hline
+                \end{tabular}
+            \end{minipage}
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B2:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    4    & C (via B1)  \\
+                    \hline
+                \end{tabular}
+            \end{minipage}\label{tab:table-a}
+        \end{table}
+
+
+
+        \item[(b)] E sends to F:
+            \begin{table}[ht]
+            \centering
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B1:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    1    & A           \\
+                    3    & C           \\
+                    \hline
+                \end{tabular}
+            \end{minipage}
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B2:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    2    & E, F        \\
+                    4    & C (via B1)  \\
+                    \hline
+                \end{tabular}
+            \end{minipage}\label{tab:table-b}
+        \end{table}
+
+
+
+        \item[(c)] F sends to E:
+            \begin{table}[ht]
+            \centering
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B1 (no change):}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    1    & A           \\
+                    3    & C           \\
+                    \hline
+                \end{tabular}
+            \end{minipage}
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B2:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    2    & E, F        \\
+                    4    & C (via B1)  \\
+                    \hline
+                \end{tabular}
+            \end{minipage}\label{tab:table-c}
+        \end{table}
+
+        \newpage
+
+        \item[(d)] G sends to E:
+        \begin{table}[ht]
+            \centering
+            \begin{minipage}{.35\textwidth}
+                \centering
+                \textbf{Bridge B1:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    1    & A           \\
+                    3    & C           \\
+                    \hline
+                \end{tabular}
+            \end{minipage}
+            \begin{minipage}{.35\textwidth}
+                \centering
+                \textbf{Bridge B2:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    2    & E, F        \\
+                    3    & G           \\
+                    4    & C (via B1)  \\
+                    \hline
+                \end{tabular}
+            \end{minipage}\label{tab:table-d}
+        \end{table}
+
+
+
+
+        \item[(e)] D sends to A:
+            \begin{table}[ht]
+            \centering
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B1:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address \\
+                    \hline
+                    1    & A           \\
+                    3    & C           \\
+                    4    & D (via B2)  \\
+                    \hline
+                \end{tabular}
+            \end{minipage}
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B2:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address   \\
+                    \hline
+                    1    & D             \\
+                    2    & E, F          \\
+                    3    & G             \\
+                    4    & A, C (via B1) \\
+                    \hline
+                \end{tabular}
+            \end{minipage}\label{tab:table-e}
+        \end{table}
+
+
+
+        \item[(f)] B sends to F:
+            \begin{table}[ht]
+            \centering
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B1:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address   \\
+                    \hline
+                    1    & A             \\
+                    2    & B             \\
+                    3    & C             \\
+                    4    & D, F (via B2) \\
+                    \hline
+                \end{tabular}
+            \end{minipage}
+            \begin{minipage}{.4\textwidth}
+                \centering
+                \textbf{Bridge B2:}
+
+                \begin{tabular}{|c|c|}
+                    \hline
+                    Port & MAC Address      \\
+                    \hline
+                    1    & D                \\
+                    2    & E, F             \\
+                    3    & G                \\
+                    4    & A, B, C (via B1) \\
+                    \hline
+                \end{tabular}
+            \end{minipage}\label{tab:table-f}
+        \end{table}
+    \end{itemize}
+
+
+
+
+    \newpage
+    \section{Task}\label{sec:task-4}
+    Collision detection is more complex in wireless networks because wireless networks operate in a shared area
+    where multiple devices can transmit and receive signals simultaneously.
+    This shared medium makes it difficult to detect collisions because signals can interfere with each other,
+    causing packet loss and reducing network performance.
+
+    To detect hidden terminals in 802.11 networks, the Request to Send/Clear to Send (RTS/CTS) mechanism is used.
+
+
+\end{document}
