@@ -133,6 +133,7 @@ class Host:
 
 		self.address = address
 		self.ws = ws
+		self.seqmod = ws + 1
 		self.connections: {tuple: {}} = {}
 		self.files = {}
 		self.receive_thread = None
@@ -147,7 +148,7 @@ class Host:
 			"ws": 0,
 			"socket": Socket(self.address, host_address),
 			"GetACK": Event(),
-			"start_time": [0 for _ in range(self.ws)]
+			"start_time": [0 for _ in range(self.seqmod)]
 		}
 		self.receive_thread = Thread(target=self.receive, args=(host_address,))
 		self.receive_thread.daemon = True
@@ -172,7 +173,8 @@ class Host:
 					# It's Data ACK with seqno
 					if data == self.next_seqno[sender_address]:
 						self.next_seqno[sender_address] += 1
-						self.next_seqno[sender_address] %= self.ws
+						self.next_seqno[sender_address] %= self.seqmod
+						print(f"Next seqno is {self.next_seqno[sender_address]}")
 						while True:
 							if self.connections[sender_address]['GetACK'].is_set():
 								continue
@@ -211,28 +213,21 @@ class Host:
 				seqno, data = message.split(b'|', 1)
 				seqno = int(seqno.decode())
 
-				# If seqno is smth random:
-				# 	- bigger than expected
-				# 	- invalid (<0)
-				# We consider that we didn't receive anything
-				if seqno > self.files[sender_address]["seqno"] or seqno < 0:
-					print(seqno)
-					return
-
 				# We record the data if only we got frame with expected seqno
 				# Otherwise, it's a duplicate
-
 				if seqno == self.files[sender_address]["seqno"]:
 					self.files[sender_address]["seqno"] += 1
 					self.files[sender_address]["seqno"] %= self.connections[sender_address]['ws']
+					# print(f"Old: {seqno}, New:{self.files[sender_address]['seqno']}")
 					self.files[sender_address]["file"].write(data)
+					print(f"Write to file {seqno}")
 					self.files[sender_address]["rec_size"] += len(data)
-					print(f"{self.files[sender_address]["rec_size"]} out of {self.files[sender_address]["size"]}")
+					# print(f"{self.files[sender_address]["rec_size"]} out of {self.files[sender_address]["size"]}")
 					if self.files[sender_address]["rec_size"] == self.files[sender_address]["size"]:
 						print("Close file")
 						self.files[sender_address]["file"].close()
 						self.files.pop(sender_address)
-				# print("Send ACK")
+				print("Send ACK")
 				self.send_frame(PDU.ACK(seqno), sender_address)
 
 	def receive(self, host_address: tuple[str, int]):
@@ -259,17 +254,17 @@ class Host:
 	def send_sync(self, address: tuple[str, int]):
 		if address not in self.connections.keys():
 			raise NoConnectionException
-		frame = PDU().pack(str(self.ws), FrameType.HANDSHAKE)
+		frame = PDU().pack(str(self.seqmod), FrameType.HANDSHAKE)
 		self.send_frame(frame, address)
 		self.await_ack(address)
 
-	def send_frame(self, frame: PDU, addr):
+	def send_frame(self, frame: PDU, addr, i=777):
 		lost = random.randint(1, self.lost_rate)
 		error = random.randint(1, self.error_rate)
 		if lost == 1:
 			lost = random.randint(1, self.lost_rate)
 			if lost == 1:
-				print("Lost!")
+				print(f"Lost! {i} - {frame.data}")
 				return
 		# if error == 1:
 		# 	print(frame.data[:-CHECKSUM_SIZE])
@@ -287,7 +282,7 @@ class Host:
 		with open(file, "rb") as f:
 			for i in range((file_size + MESSAGE_SIZE - 1) // MESSAGE_SIZE):
 				data = f.read(MESSAGE_SIZE)
-				seqno = (i + 1) % self.ws
+				seqno = (i + 1) % self.seqmod
 				frame_data = PDU().pack(f"{seqno}|".encode() + data, FrameType.DATA)
 				data_chunks.append(frame_data)
 
@@ -297,13 +292,13 @@ class Host:
 		while i <= len(data_chunks):
 			try:
 				if i != len(data_chunks):
-					print(f"Send {i}({i % self.ws}) frame out of {len(data_chunks) - 1}")
-					self.send_frame(data_chunks[i], address)
-					self.connections[address]['start_time'][i % self.ws] = round(time.time())
+					print(f"Send {i}({i % self.seqmod}) frame out of {len(data_chunks) - 1}")
+					self.send_frame(data_chunks[i], address, i)
+					self.connections[address]['start_time'][i % self.seqmod] = round(time.time())
 					wait_frames_ack += 1
 					i += 1
 				if wait_frames_ack == self.ws or i == len(data_chunks):
-					seqno = i % self.ws
+					seqno = (i-1) % self.seqmod
 					passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
 					self.await_ack(address, passed_time)
 					# print(f"Get ACK {seqno}")
@@ -392,4 +387,4 @@ if __name__ == '__main__':
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
 	thread1.start()
-	# thread2.start()
+# thread2.start()
