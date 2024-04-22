@@ -1,5 +1,6 @@
 import configparser
 import copy
+import logging
 import os
 import random
 import time
@@ -14,19 +15,29 @@ from exceptions import InvalidPDUException, NACKException, NoConnectionException
 # NOTE: I consider that between 2 hosts we can create only 1 connection
 #       and host1 cannot send 2 files in parallel to host2
 
-TIMER = -1
-PACKETS = 0
+# Consider that all host has the same data size
+
+# TODO logs in folders
+
 
 CONNECTION_ATTEMPTS = 5
-TIMEOUT_NUMBER = 5
+TIMEOUT_NUMBER = 50
 
 HEADER_SIZE = 1
 CHECKSUM_SIZE = 4
+INFO_DATA = 20
 
-MESSAGE_SIZE = 4096
-MAX_FRAME_SIZE = MESSAGE_SIZE + 20
 
-STANDARD_WS = 3
+class PDUSendStatus(Enum):
+	NEW = 'NEW'
+	TO = 'Timeout Retransmission'
+	RT = "Retransmission"
+
+
+class PDURecStatus(Enum):
+	OK = 'Correct'
+	DataErr = 'Data Error'
+	NotErr = 'Sequential Number Error '
 
 
 class FrameType(Enum):
@@ -39,12 +50,12 @@ class FrameType(Enum):
 class PDU:
 	def __init__(self, data=None):
 		self.data: bytes = data
-		self.size = MESSAGE_SIZE
-		self.checksum = b''
+		self.status = PDUSendStatus.NEW
 		if self.data is not None:
 			self.message = self.data[HEADER_SIZE: -CHECKSUM_SIZE]
 			self.header = self.data[:HEADER_SIZE]
 			self.checksum = self.data[-CHECKSUM_SIZE:]
+			self.type = FrameType(self.header.decode())
 
 	@staticmethod
 	def ACK(seqno: int) -> 'PDU':
@@ -66,6 +77,10 @@ class PDU:
 	def calc_checksum(self, data) -> bytes:
 		return zlib.adler32(data).to_bytes(CHECKSUM_SIZE, byteorder='big')
 
+	def get_seqno(self) -> str:
+		if self.type == FrameType.DATA:
+			return self.message.split(b'|', maxsplit=1)[0].decode()
+
 	def pack(self, data, frame_type: FrameType) -> 'PDU':
 		def make_header():
 			match frame_type:
@@ -79,40 +94,45 @@ class PDU:
 					header = FrameType.ACK.value.encode()
 				case _:
 					raise ValueError(f"Unknown frame type: {frame_type}")
+			self.type = FrameType(header.decode())
 			self.header = header
-			return header + data
+			self.data = self.header + self.message
 
-		data = data.encode('utf-8') if type(data) is str else data
-		data = make_header()
-
-		self.checksum = self.calc_checksum(data)
-		self.data = data + self.checksum
-		self.header = self.data[:HEADER_SIZE]
+		self.message = data.encode('utf-8') if type(data) is str else data
+		make_header()
+		self.checksum = self.calc_checksum(self.data)
+		self.data = self.data + self.checksum
 		return self
 
 	def check(self) -> bool:
 		cal_checksum = self.calc_checksum(self.header + self.message)
+		if cal_checksum != self.checksum:
+			print(self.type, self.get_seqno())
+			print(f"E: {cal_checksum} - {self.checksum}")
 		return cal_checksum == self.checksum
 
 	def unpack(self) -> tuple[FrameType, bytes]:
 		return FrameType(self.header.decode()), self.message
 
-	def error(self):
+	def noise(self):
+		# TODO redo error
 		index_to_change = random.randint(0, len(self.data) - 1)
 		new_byte_value = random.randint(0, 255)
 		self.data = self.data[:index_to_change] + bytes([new_byte_value]) + self.data[index_to_change + 1:]
 
 
 class Socket:
-	def __init__(self, home_address: tuple[str, int], address: tuple[str, int]):
+	def __init__(self, home_address: tuple[str, int], address: tuple[str, int],
+				 framesize: int, timer: float):
 		self.sock = socket(AF_INET, SOCK_DGRAM)
-		self.sock.settimeout(TIMER)
+		self.sock.settimeout(timer)
 		self.sock.bind(home_address)
 		self.receiver_address = address
+		self.frame_size = framesize
 
 	def recframe(self) -> PDU:
 		try:
-			data, addr = self.sock.recvfrom(MAX_FRAME_SIZE)
+			data, addr = self.sock.recvfrom(self.frame_size + INFO_DATA)
 			frame = PDU(data)
 			return frame
 		except InvalidPDUException as e:
@@ -127,14 +147,17 @@ class Socket:
 
 
 class Host:
-	def __init__(self, address, ws, lost_rate, init_seqno, error_rate):
+	def __init__(self, address, ws, data_size, init_seqno, timer, lost_rate, error_rate, folder):
+		self.InitSeqNo = init_seqno  # TODO
 		self.lost_rate = lost_rate
-		self.InitSeqNo = init_seqno
 		self.error_rate = error_rate
+		self.frame_size = data_size
+		self.timer = timer
+		self.host_folder = folder
 
 		self.address = address
 		self.ws = ws
-		self.seqmod = ws + 1
+		# self.seqmod = ws + 1
 		self.connections: {tuple: {}} = {}
 		self.files = {}
 		self.receive_thread = None
@@ -147,9 +170,10 @@ class Host:
 
 		self.connections[host_address] = {
 			"ws": 0,
-			"socket": Socket(self.address, host_address),
+			"socket": Socket(self.address, host_address, self.frame_size, self.timer),
 			"GetACK": Event(),
-			"start_time": [0 for _ in range(self.seqmod)]
+			"NACK": Event(),
+			"start_time": [0 for _ in range(self.ws + 1)]
 		}
 		self.receive_thread = Thread(target=self.receive, args=(host_address,))
 		self.receive_thread.daemon = True
@@ -161,6 +185,7 @@ class Host:
 		# data:      seqno|data
 		# ack:       data ("SYN", "SYN|{ws}", filename, seqno)
 		if not frame.check():
+			# We should send NACK if it is ACK
 			print(f"Mismatch checksum!")
 			return
 
@@ -173,7 +198,7 @@ class Host:
 					# It's Data ACK with seqno
 					if data == self.next_seqno[sender_address]:
 						self.next_seqno[sender_address] += 1
-						self.next_seqno[sender_address] %= self.seqmod
+						self.next_seqno[sender_address] %= (self.ws + 1)
 						while True:
 							if self.connections[sender_address]['GetACK'].is_set():
 								continue
@@ -184,21 +209,19 @@ class Host:
 					self.connections[sender_address]['GetACK'].set()
 
 			case FrameType.HANDSHAKE:
-				# It is new connection we have to create the connection
-				# self.add_connection(sender_address)
-
 				self.connections[sender_address]['ws'] = int(message.decode())
 				self.send_frame(PDU.SYNACK(), sender_address)
 
 			case FrameType.START:
 				filename, file_size = message.split(b'|', 1)
 				filename, file_size = map(lambda x: x.decode(), (filename, file_size))
-				file_path = os.path.join(os.getcwd(), filename)
+				file_path = os.path.join(os.getcwd(), self.host_folder, filename)
 
 				if os.path.exists(file_path):
 					os.remove(file_path)
 
 				self.files[sender_address] = {
+					"filename": filename.split(".")[0],
 					"file": open(file_path, 'wb'),
 					"size": int(file_size),
 					"seqno": 1,
@@ -239,48 +262,62 @@ class Host:
 				timeouts_number = 0
 
 	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
-		if self.connections[address]['GetACK'].wait(TIMER - passed_time):
-			self.connections[address]['GetACK'].clear()
+		if (self.connections[address]['GetACK'].wait(self.timer - passed_time) or
+				self.connections[address]['NACK'].wait(self.timer - passed_time)):
+			if self.connections[address]['GetACK'].is_set():
+				self.connections[address]['GetACK'].clear()
+			else:
+				self.connections[address]['NACK'].clear()
+				raise NACKException
 		else:
 			raise Timeout
 
 	def send_sync(self, address: tuple[str, int]):
 		if address not in self.connections.keys():
 			raise NoConnectionException
-		frame = PDU().pack(str(self.seqmod), FrameType.HANDSHAKE)
+		frame = PDU().pack(str(self.ws + 1), FrameType.HANDSHAKE)
 		self.send_frame(frame, address)
 		self.await_ack(address)
 
-	def send_frame(self, frame: PDU, addr):
+	def send_frame(self, frame: PDU, addr, filename=None):
+		if frame.type in [FrameType.START, FrameType.DATA]:
+			if frame.type == FrameType.START:
+				create_new_log(filename)
+				seqno = 0
+			else:
+				seqno = frame.get_seqno()
+			send_log(filename, seqno, frame.status.value, 0)
+
 		lost = random.randint(0, self.lost_rate)
 		error = random.randint(0, self.error_rate)
-		global PACKETS
-		PACKETS += 1
-		if lost == 0:
-			print(f"Lost!")
-			return
-		if error == 0:
-			copy_frame = copy.deepcopy(frame)
-			copy_frame.error()
-			self.connections[addr]['socket'].send(copy_frame)
-			print(f"Error!")
-		else:
-			self.connections[addr]['socket'].send(frame)
+		# if lost == 0:
+		# 	print(f"Lost!")
+		# 	return
+		# if error == 0:
+		# 	error_frame = copy.deepcopy(frame)
+		# 	error_frame.noise()
+		# 	self.connections[addr]['socket'].send(error_frame)
+		# 	print(f"Error!")
+		# else:
+		self.connections[addr]['socket'].send(frame)
 
 	def send_file(self, file: str, address: tuple[str, int]):
+		# Check existing connection
 		if address not in self.connections.keys():
 			raise NoConnectionException
 
+		# Divide file by frames
 		file_size = os.path.getsize(file)
-		start_frame = PDU().pack(f"send_{file}|{file_size}", FrameType.START)
+		start_frame = PDU().pack(f"{file}|{file_size}", FrameType.START)
 		data_chunks = [start_frame]
 		with open(file, "rb") as f:
-			for i in range((file_size + MESSAGE_SIZE - 1) // MESSAGE_SIZE):
-				data = f.read(MESSAGE_SIZE)
-				seqno = (i + 1) % self.seqmod
+			for i in range((file_size + self.frame_size - 1) // self.frame_size):
+				data = f.read(self.frame_size)
+				seqno = (i + 1) % (self.ws + 1)
 				frame_data = PDU().pack(f"{seqno}|".encode() + data, FrameType.DATA)
 				data_chunks.append(frame_data)
 
+		# Go-Back-N
 		wait_frames_ack = 0
 		i = 0
 		self.next_seqno[address] = 0
@@ -288,13 +325,14 @@ class Host:
 		while i <= len(data_chunks):
 			try:
 				if i != len(data_chunks):
-					print(f"Send {i}({i % self.seqmod}) frame out of {len(data_chunks) - 1}")
-					self.send_frame(data_chunks[i], address)
-					self.connections[address]['start_time'][i % self.seqmod] = round(time.time())
+					print(f"Send {i}({i % (self.ws + 1)}) frame out of {len(data_chunks) - 1}")
+					self.send_frame(data_chunks[i], address, file.split(".")[0])
+					# Note the time of sending frame
+					self.connections[address]['start_time'][i % (self.ws + 1)] = round(time.time())
 					wait_frames_ack += 1
 					i += 1
 				if wait_frames_ack == self.ws or i == len(data_chunks):
-					seqno = (i - 1) % self.seqmod
+					seqno = (i - 1) % (self.ws + 1)  # Seqno of the oldest frame we wait for
 					passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
 					self.await_ack(address, passed_time)
 					print(f"Get ACK {seqno}")
@@ -305,9 +343,19 @@ class Host:
 						break
 
 			except Timeout:
+				data_chunks[i - step_back].status = PDUSendStatus.TO
+				for k in range(1, step_back):
+					data_chunks[i - k].status = PDUSendStatus.RT
+
 				i -= step_back
 				wait_frames_ack = 0
 				print(f"Timeout frame!")
+			except NACKException:
+				for k in range(1, step_back + 1):
+					data_chunks[i - k].status = PDUSendStatus.RT
+				i -= step_back
+				wait_frames_ack = 0
+				print(f"NACK!")
 
 		print("Done!")
 
@@ -338,35 +386,64 @@ class Connector:
 					raise LimitSentAttemptsException
 
 
-# TODO parameters
 def create_host(config_file):
-	global TIMER
-	global MESSAGE_SIZE
 	config = configparser.ConfigParser()
 	config.read(config_file)
 
+	hostNo = config.getint("UDPSettings", "HostNo")
+	os.makedirs(f"Host{hostNo}", exist_ok=True)
+	folder = f"Host{hostNo}"
+
 	UDPPort = config.getint('UDPSettings', 'UDPPort')
 	SWSize = config.getint('WindowSettings', 'SWSize')
-	Timeout = config.getint('TimeoutSettings', 'Timeout')
+	Timeout = config.getint('TimeoutSettings', 'Timeout') / 1000
 	LostRate = config.getint('PDUSettings', 'LostRate')
 	ErrorRate = config.getint('PDUSettings', 'ErrorRate')
-
 	InitSeqNo = config.getint('SequenceSettings', 'InitSeqNo')
 	DataSize = config.getint('PDUSettings', 'DataSize')
-	MESSAGE_SIZE = int(DataSize)
-	host = Host(("localhost", UDPPort), SWSize, LostRate, InitSeqNo, ErrorRate)
-	# TODO Make timer local
-	TIMER = int(Timeout) / 1000
+
+	host = Host(("localhost", UDPPort), SWSize, DataSize, InitSeqNo, Timeout, LostRate, ErrorRate, folder)
 	return host
 
 
-def host1_script(host):
-	host.send_file("vid.MP4", ("localhost", 8803))
-
-
 def host2_script(host):
-	host.send_file("pic.jpg", ("localhost", 3088))
+	host.send_file("vid.MP4", ("localhost", 3088))
 
+
+def host1_script(host):
+	p = "pic.jpg"
+	t = "test.txt"
+	host.send_file(p, ("localhost", 8803))
+
+
+def send_log(filename, seqno, status, ackno):
+	log_data = {
+		'seqno': seqno,
+		'status': status,
+		'ackno': ackno,
+	}
+	log_files[filename].info('', extra=log_data)
+
+
+def rec_log(filename, exp_seqno, rec_seqno, status):
+	with open(f'{filename}_log.txt', 'a') as f:
+		log = f"{time}, pdu_exp={exp_seqno}, pdu_recv={rec_seqno}, status={status}"
+
+
+def create_new_log(filename):
+	log_files[filename] = logging.getLogger(filename)
+	log_files[filename].setLevel(logging.INFO)
+
+	file_handler = logging.FileHandler(f'{filename}.log')
+	file_handler.setLevel(logging.INFO)
+
+	log_format = logging.Formatter('%(asctime)s, pdu_to_send=%(seqno)s, status=%(status)s, ackedNo=%(ackno)s')
+	file_handler.setFormatter(log_format)
+
+	log_files[filename].addHandler(file_handler)
+
+
+log_files = {}
 
 if __name__ == '__main__':
 	host1 = create_host("config_H1.ini")
@@ -378,4 +455,4 @@ if __name__ == '__main__':
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
 	thread1.start()
-	thread2.start()
+# thread2.start()
