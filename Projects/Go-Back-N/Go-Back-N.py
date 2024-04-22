@@ -9,16 +9,40 @@ from enum import Enum
 from threading import Thread, Event
 from socket import socket, AF_INET, SOCK_DGRAM, timeout
 
-from exceptions import InvalidPDUException, NACKException, NoConnectionException, \
-	LimitSentAttemptsException, Timeout, ExistingConnectionException
 
 # NOTE: I consider that between 2 hosts we can create only 1 connection
 #       and host1 cannot send 2 files in parallel to host2
-
 # Consider that all host has the same data size
 
-# TODO logs in folders
-# TODO delete log
+
+class InvalidPDUException(Exception):
+	def __init__(self, message="Invalid PDU"):
+		super().__init__(message)
+
+
+class NACKException(Exception):
+	def __init__(self, message="NACK"):
+		super().__init__(message)
+
+
+class NoConnectionException(Exception):
+	def __init__(self, message="No existing such connection"):
+		super().__init__(message)
+
+
+class LimitSentAttemptsException(Exception):
+	def __init__(self, message="Too many attempts to send a frame"):
+		super().__init__(message)
+
+
+class Timeout(Exception):
+	def __init__(self, message="timeout!"):
+		super().__init__(message)
+
+
+class ExistingConnectionException(Exception):
+	def __init__(self, message="Connection with this server already exists"):
+		super().__init__(message)
 
 
 CONNECTION_ATTEMPTS = 5
@@ -38,7 +62,7 @@ class PDUSendStatus(Enum):
 class PDURecStatus(Enum):
 	OK = 'Correct'
 	DataErr = 'Data Error'
-	NotErr = 'Sequential Number Error '
+	NoErr = 'Sequential Number Error '
 
 
 class FrameType(Enum):
@@ -146,12 +170,13 @@ class Socket:
 
 class Host:
 	def __init__(self, address, ws, data_size, init_seqno, timer, lost_rate, error_rate, folder):
-		self.InitSeqNo = init_seqno  # TODO
+		self.InitSeqNo = init_seqno
 		self.lost_rate = lost_rate
 		self.error_rate = error_rate
 		self.frame_size = data_size
 		self.timer = timer
 		self.host_folder = folder
+		self.current_file = None
 
 		self.address = address
 		self.ws = ws
@@ -184,6 +209,15 @@ class Host:
 		# ack:       data ("SYN", "SYN|{ws}", filename, seqno)
 		if not frame.check():
 			print(f"Mismatch checksum!")
+			if frame.type in [FrameType.START, FrameType.DATA]:
+				if frame.type == FrameType.START:
+					filename = frame.message.split(b'|', maxsplit=1)[0].decode()
+					if "rec_" + filename not in log_files:
+						print("Couldn't define file name and write in corresponding log file")
+						return
+				else:
+					filename = self.files[sender_address]["filename"]
+				rec_log("rec_" + filename, 0, 0, PDURecStatus.DataErr.name)
 			return
 
 		header, message = frame.unpack()
@@ -224,6 +258,8 @@ class Host:
 					"seqno": 1,
 					"rec_size": 0
 				}
+				create_new_log(self.host_folder, "rec_" + filename.split(".")[0], False)
+				rec_log("rec_" + self.files[sender_address]["filename"], 0, 0, PDURecStatus.OK.name)
 				self.send_frame(PDU.ACK(0), sender_address)
 
 			case FrameType.DATA:
@@ -232,7 +268,9 @@ class Host:
 
 				# We record the data if only we got frame with expected seqno
 				# Otherwise, it's a duplicate
+				status = PDURecStatus.NoErr
 				if seqno == self.files[sender_address]["seqno"]:
+					status = PDURecStatus.OK
 					self.files[sender_address]["seqno"] += 1
 					self.files[sender_address]["seqno"] %= self.connections[sender_address]['ws']
 					self.files[sender_address]["file"].write(data)
@@ -242,6 +280,8 @@ class Host:
 						self.files[sender_address]["file"].close()
 						self.files.pop(sender_address)
 				self.send_frame(PDU.ACK(seqno), sender_address)
+				rec_log("rec_" + self.files[sender_address]["filename"], self.files[sender_address]["seqno"], seqno,
+						status.name)
 
 	def receive(self, host_address: tuple[str, int]):
 		timeouts_number = 0  # If there is no messages for a long time -> Break connection
@@ -279,11 +319,11 @@ class Host:
 	def send_frame(self, frame: PDU, addr, filename=None, frameNo=None):
 		if frame.type in [FrameType.START, FrameType.DATA]:
 			if frame.type == FrameType.START:
-				create_new_log(self.host_folder, filename)
+				create_new_log(self.host_folder, "send_" + filename, True)
 				seqno = 0
 			else:
 				seqno = frame.get_seqno()
-			send_log(filename, seqno, frame.status.name, frameNo)
+			send_log("send_" + filename, seqno, frame.status.name, frameNo)
 
 		lost = random.randint(0, self.lost_rate)
 		error = random.randint(0, self.error_rate)
@@ -307,6 +347,8 @@ class Host:
 		file_size = os.path.getsize(file)
 		start_frame = PDU().pack(f"{file}|{file_size}", FrameType.START)
 		data_chunks = [start_frame]
+
+		self.current_file = file.split(".")[0]
 		with open(file, "rb") as f:
 			for i in range((file_size + self.frame_size - 1) // self.frame_size):
 				data = f.read(self.frame_size)
@@ -343,7 +385,6 @@ class Host:
 				data_chunks[i - step_back].status = PDUSendStatus.TO
 				for k in range(1, step_back):
 					data_chunks[i - k].status = PDUSendStatus.RT
-
 				i -= step_back
 				wait_frames_ack = 0
 				print(f"Timeout frame!")
@@ -423,11 +464,15 @@ def send_log(filename, seqno, status, ackno):
 
 
 def rec_log(filename, exp_seqno, rec_seqno, status):
-	with open(f'{filename}_log.txt', 'a') as f:
-		log = f"{time}, pdu_exp={exp_seqno}, pdu_recv={rec_seqno}, status={status}"
+	log_data = {
+		'exp_seqno': exp_seqno,
+		'rec_seqno': rec_seqno,
+		'status': status,
+	}
+	log_files[filename].info('', extra=log_data)
 
 
-def create_new_log(folder, filename):
+def create_new_log(folder, filename, is_send):
 	path = os.path.join(folder, filename)
 	if os.path.exists(f'{path}.log'):
 		os.remove(f'{path}.log')
@@ -437,8 +482,11 @@ def create_new_log(folder, filename):
 
 	file_handler = logging.FileHandler(f'{path}.log')
 	file_handler.setLevel(logging.INFO)
+	if is_send:
+		log_format = logging.Formatter('%(asctime)s, pdu_to_send=%(seqno)s, status=%(status)s, ackedNo=%(ackno)s')
+	else:
+		log_format = logging.Formatter('%(asctime)s, pdu_exp=%(exp_seqno)s, pdu_recv=%(rec_seqno)s, status=%(status)s')
 
-	log_format = logging.Formatter('%(asctime)s, pdu_to_send=%(seqno)s, status=%(status)s, ackedNo=%(ackno)s')
 	file_handler.setFormatter(log_format)
 
 	log_files[filename].addHandler(file_handler)
