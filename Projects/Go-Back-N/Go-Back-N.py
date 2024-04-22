@@ -18,6 +18,7 @@ from exceptions import InvalidPDUException, NACKException, NoConnectionException
 # Consider that all host has the same data size
 
 # TODO logs in folders
+# TODO delete log
 
 
 CONNECTION_ATTEMPTS = 5
@@ -106,9 +107,6 @@ class PDU:
 
 	def check(self) -> bool:
 		cal_checksum = self.calc_checksum(self.header + self.message)
-		if cal_checksum != self.checksum:
-			print(self.type, self.get_seqno())
-			print(f"E: {cal_checksum} - {self.checksum}")
 		return cal_checksum == self.checksum
 
 	def unpack(self) -> tuple[FrameType, bytes]:
@@ -185,7 +183,6 @@ class Host:
 		# data:      seqno|data
 		# ack:       data ("SYN", "SYN|{ws}", filename, seqno)
 		if not frame.check():
-			# We should send NACK if it is ACK
 			print(f"Mismatch checksum!")
 			return
 
@@ -279,27 +276,27 @@ class Host:
 		self.send_frame(frame, address)
 		self.await_ack(address)
 
-	def send_frame(self, frame: PDU, addr, filename=None):
+	def send_frame(self, frame: PDU, addr, filename=None, frameNo=None):
 		if frame.type in [FrameType.START, FrameType.DATA]:
 			if frame.type == FrameType.START:
-				create_new_log(filename)
+				create_new_log(self.host_folder, filename)
 				seqno = 0
 			else:
 				seqno = frame.get_seqno()
-			send_log(filename, seqno, frame.status.value, 0)
+			send_log(filename, seqno, frame.status.name, frameNo)
 
 		lost = random.randint(0, self.lost_rate)
 		error = random.randint(0, self.error_rate)
-		# if lost == 0:
-		# 	print(f"Lost!")
-		# 	return
-		# if error == 0:
-		# 	error_frame = copy.deepcopy(frame)
-		# 	error_frame.noise()
-		# 	self.connections[addr]['socket'].send(error_frame)
-		# 	print(f"Error!")
-		# else:
-		self.connections[addr]['socket'].send(frame)
+		if lost == 0:
+			print(f"Lost!")
+			return
+		if error == 0:
+			error_frame = copy.deepcopy(frame)
+			error_frame.noise()
+			self.connections[addr]['socket'].send(error_frame)
+			print(f"Error!")
+		else:
+			self.connections[addr]['socket'].send(frame)
 
 	def send_file(self, file: str, address: tuple[str, int]):
 		# Check existing connection
@@ -326,7 +323,7 @@ class Host:
 			try:
 				if i != len(data_chunks):
 					print(f"Send {i}({i % (self.ws + 1)}) frame out of {len(data_chunks) - 1}")
-					self.send_frame(data_chunks[i], address, file.split(".")[0])
+					self.send_frame(data_chunks[i], address, file.split(".")[0], i)
 					# Note the time of sending frame
 					self.connections[address]['start_time'][i % (self.ws + 1)] = round(time.time())
 					wait_frames_ack += 1
@@ -430,11 +427,15 @@ def rec_log(filename, exp_seqno, rec_seqno, status):
 		log = f"{time}, pdu_exp={exp_seqno}, pdu_recv={rec_seqno}, status={status}"
 
 
-def create_new_log(filename):
-	log_files[filename] = logging.getLogger(filename)
+def create_new_log(folder, filename):
+	path = os.path.join(folder, filename)
+	if os.path.exists(f'{path}.log'):
+		os.remove(f'{path}.log')
+
+	log_files[filename] = logging.getLogger(path)
 	log_files[filename].setLevel(logging.INFO)
 
-	file_handler = logging.FileHandler(f'{filename}.log')
+	file_handler = logging.FileHandler(f'{path}.log')
 	file_handler.setLevel(logging.INFO)
 
 	log_format = logging.Formatter('%(asctime)s, pdu_to_send=%(seqno)s, status=%(status)s, ackedNo=%(ackno)s')
