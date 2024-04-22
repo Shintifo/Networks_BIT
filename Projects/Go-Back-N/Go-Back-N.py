@@ -137,7 +137,6 @@ class PDU:
 		return FrameType(self.header.decode()), self.message
 
 	def noise(self):
-		# TODO redo error
 		index_to_change = random.randint(0, len(self.data) - 1)
 		new_byte_value = random.randint(0, 255)
 		self.data = self.data[:index_to_change] + bytes([new_byte_value]) + self.data[index_to_change + 1:]
@@ -244,6 +243,7 @@ class Host:
 				self.send_frame(PDU.SYNACK(), sender_address)
 
 			case FrameType.START:
+				print("Start frame!")
 				filename, file_size = message.split(b'|', 1)
 				filename, file_size = map(lambda x: x.decode(), (filename, file_size))
 				file_path = os.path.join(os.getcwd(), self.host_folder, filename)
@@ -265,23 +265,24 @@ class Host:
 			case FrameType.DATA:
 				seqno, data = message.split(b'|', 1)
 				seqno = int(seqno.decode())
-
 				# We record the data if only we got frame with expected seqno
 				# Otherwise, it's a duplicate
-				status = PDURecStatus.NoErr
-				if seqno == self.files[sender_address]["seqno"]:
-					status = PDURecStatus.OK
+
+				if sender_address in self.files.keys() and seqno == self.files[sender_address]["seqno"]:
+					rec_log("rec_" + self.files[sender_address]["filename"], self.files[sender_address]["seqno"],
+							seqno, PDURecStatus.OK.name)
 					self.files[sender_address]["seqno"] += 1
 					self.files[sender_address]["seqno"] %= self.connections[sender_address]['ws']
 					self.files[sender_address]["file"].write(data)
 					self.files[sender_address]["rec_size"] += len(data)
 					if self.files[sender_address]["rec_size"] == self.files[sender_address]["size"]:
-						print("Close file")
+						print(f"Close file")
 						self.files[sender_address]["file"].close()
 						self.files.pop(sender_address)
+				else:
+					rec_log("rec_" + self.files[sender_address]["filename"], self.files[sender_address]["seqno"],
+							seqno, PDURecStatus.NoErr.name)
 				self.send_frame(PDU.ACK(seqno), sender_address)
-				rec_log("rec_" + self.files[sender_address]["filename"], self.files[sender_address]["seqno"], seqno,
-						status.name)
 
 	def receive(self, host_address: tuple[str, int]):
 		timeouts_number = 0  # If there is no messages for a long time -> Break connection
@@ -328,13 +329,13 @@ class Host:
 		lost = random.randint(0, self.lost_rate)
 		error = random.randint(0, self.error_rate)
 		if lost == 0:
-			print(f"Lost!")
+			# print(f"Lost!")
 			return
 		if error == 0:
 			error_frame = copy.deepcopy(frame)
 			error_frame.noise()
 			self.connections[addr]['socket'].send(error_frame)
-			print(f"Error!")
+		# print(f"Error!")
 		else:
 			self.connections[addr]['socket'].send(frame)
 
@@ -374,7 +375,7 @@ class Host:
 					seqno = (i - 1) % (self.ws + 1)  # Seqno of the oldest frame we wait for
 					passed_time = round(time.time()) - self.connections[address]['start_time'][seqno]
 					self.await_ack(address, passed_time)
-					print(f"Get ACK {seqno}")
+					# print(f"Get ACK {seqno}")
 					wait_frames_ack -= 1
 					if i == len(data_chunks):
 						step_back -= 1
@@ -445,13 +446,15 @@ def create_host(config_file):
 
 
 def host2_script(host):
+	p = "pic.jpg"
+	t = "test.txt"
 	host.send_file("vid.MP4", ("localhost", 3088))
 
 
 def host1_script(host):
 	p = "pic.jpg"
 	t = "test.txt"
-	host.send_file(p, ("localhost", 8803))
+	host.send_file(p, ("localhost", 9999))
 
 
 def send_log(filename, seqno, status, ackno):
@@ -503,5 +506,5 @@ if __name__ == '__main__':
 
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
+	thread2.start()
 	thread1.start()
-# thread2.start()
