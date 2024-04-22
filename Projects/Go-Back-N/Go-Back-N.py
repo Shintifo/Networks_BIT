@@ -12,26 +12,11 @@ from socket import socket, AF_INET, SOCK_DGRAM, timeout
 
 # NOTE: I consider that between 2 hosts we can create only 1 connection
 #       and host1 cannot send 2 files in parallel to host2
-# Consider that all host has the same data size
 
-
-class InvalidPDUException(Exception):
-	def __init__(self, message="Invalid PDU"):
-		super().__init__(message)
-
+# I Consider that all host use the same data size
 
 class NACKException(Exception):
 	def __init__(self, message="NACK"):
-		super().__init__(message)
-
-
-class NoConnectionException(Exception):
-	def __init__(self, message="No existing such connection"):
-		super().__init__(message)
-
-
-class LimitSentAttemptsException(Exception):
-	def __init__(self, message="Too many attempts to send a frame"):
 		super().__init__(message)
 
 
@@ -40,14 +25,17 @@ class Timeout(Exception):
 		super().__init__(message)
 
 
+class NoConnectionException(Exception):
+	def __init__(self, message="No existing such connection"):
+		super().__init__(message)
+
+
 class ExistingConnectionException(Exception):
 	def __init__(self, message="Connection with this server already exists"):
 		super().__init__(message)
 
 
-CONNECTION_ATTEMPTS = 5
 TIMEOUT_NUMBER = 50
-
 HEADER_SIZE = 1
 CHECKSUM_SIZE = 4
 INFO_DATA = 20
@@ -76,11 +64,11 @@ class PDU:
 	def __init__(self, data=None):
 		self.data: bytes = data
 		self.status = PDUSendStatus.NEW
+		self.type = None
 		if self.data is not None:
 			self.message = self.data[HEADER_SIZE: -CHECKSUM_SIZE]
 			self.header = self.data[:HEADER_SIZE]
 			self.checksum = self.data[-CHECKSUM_SIZE:]
-			self.type = FrameType(self.header.decode())
 
 	@staticmethod
 	def ACK(seqno: int) -> 'PDU':
@@ -121,12 +109,11 @@ class PDU:
 					raise ValueError(f"Unknown frame type: {frame_type}")
 			self.type = FrameType(header.decode())
 			self.header = header
-			self.data = self.header + self.message
 
 		self.message = data.encode('utf-8') if type(data) is str else data
 		make_header()
-		self.checksum = self.calc_checksum(self.data)
-		self.data = self.data + self.checksum
+		self.checksum = self.calc_checksum(self.header + self.message)
+		self.data = self.header + self.message + self.checksum
 		return self
 
 	def check(self) -> bool:
@@ -152,13 +139,9 @@ class Socket:
 		self.frame_size = framesize
 
 	def recframe(self) -> PDU:
-		try:
-			data, addr = self.sock.recvfrom(self.frame_size + INFO_DATA)
-			frame = PDU(data)
-			return frame
-		except InvalidPDUException as e:
-			print(e)
-			raise NACKException()
+		data, addr = self.sock.recvfrom(self.frame_size + INFO_DATA)
+		frame = PDU(data)
+		return frame
 
 	def send(self, frame: PDU):
 		self.sock.sendto(frame.data, self.receiver_address)
@@ -175,11 +158,9 @@ class Host:
 		self.frame_size = data_size
 		self.timer = timer
 		self.host_folder = folder
-		self.current_file = None
 
 		self.address = address
 		self.ws = ws
-		# self.seqmod = ws + 1
 		self.connections: {tuple: {}} = {}
 		self.files = {}
 		self.receive_thread = None
@@ -205,18 +186,20 @@ class Host:
 		# handshake: WS
 		# start:     filename|file_size
 		# data:      seqno|data
-		# ack:       data ("SYN", "SYN|{ws}", filename, seqno)
+		# ack:       data ("SYN", "SYN|{ws}", seqno)
 		if not frame.check():
 			print(f"Mismatch checksum!")
 			if frame.type in [FrameType.START, FrameType.DATA]:
 				if frame.type == FrameType.START:
+					exp_seqno = 0
 					filename = frame.message.split(b'|', maxsplit=1)[0].decode()
 					if "rec_" + filename not in log_files:
 						print("Couldn't define file name and write in corresponding log file")
 						return
 				else:
+					exp_seqno = self.files[sender_address]["seqno"]
 					filename = self.files[sender_address]["filename"]
-				rec_log("rec_" + filename, 0, 0, PDURecStatus.DataErr.name)
+				rec_log("rec_" + filename, exp_seqno, frame.get_seqno(), PDURecStatus.DataErr.name)
 			return
 
 		header, message = frame.unpack()
@@ -230,12 +213,10 @@ class Host:
 						self.next_seqno[sender_address] += 1
 						self.next_seqno[sender_address] %= (self.ws + 1)
 						while True:
-							if self.connections[sender_address]['GetACK'].is_set():
-								continue
-							break
-						self.connections[sender_address]['GetACK'].set()
-				except ValueError:
-					# It's start (filename) and SYN
+							if not self.connections[sender_address]['GetACK'].is_set():
+								self.connections[sender_address]['GetACK'].set()
+								break
+				except ValueError:  # It's SYN ACK
 					self.connections[sender_address]['GetACK'].set()
 
 			case FrameType.HANDSHAKE:
@@ -243,7 +224,6 @@ class Host:
 				self.send_frame(PDU.SYNACK(), sender_address)
 
 			case FrameType.START:
-				print("Start frame!")
 				filename, file_size = message.split(b'|', 1)
 				filename, file_size = map(lambda x: x.decode(), (filename, file_size))
 				file_path = os.path.join(os.getcwd(), self.host_folder, filename)
@@ -258,8 +238,9 @@ class Host:
 					"seqno": 1,
 					"rec_size": 0
 				}
-				create_new_log(self.host_folder, "rec_" + filename.split(".")[0], False)
-				rec_log("rec_" + self.files[sender_address]["filename"], 0, 0, PDURecStatus.OK.name)
+				log_name = "rec_" + filename.split(".")[0]
+				create_new_log(self.host_folder, log_name, False)
+				rec_log(log_name, 0, 0, PDURecStatus.OK.name)
 				self.send_frame(PDU.ACK(0), sender_address)
 
 			case FrameType.DATA:
@@ -296,8 +277,6 @@ class Host:
 					print("Break the connection!")
 					exit()
 				timeouts_number += 1
-			except NACKException:
-				timeouts_number = 0
 
 	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
 		if (self.connections[address]['GetACK'].wait(self.timer - passed_time) or
@@ -349,7 +328,6 @@ class Host:
 		start_frame = PDU().pack(f"{file}|{file_size}", FrameType.START)
 		data_chunks = [start_frame]
 
-		self.current_file = file.split(".")[0]
 		with open(file, "rb") as f:
 			for i in range((file_size + self.frame_size - 1) // self.frame_size):
 				data = f.read(self.frame_size)
@@ -365,7 +343,7 @@ class Host:
 		while i <= len(data_chunks):
 			try:
 				if i != len(data_chunks):
-					print(f"Send {i}({i % (self.ws + 1)}) frame out of {len(data_chunks) - 1}")
+					# print(f"Send {i}({i % (self.ws + 1)}) frame out of {len(data_chunks) - 1}")
 					self.send_frame(data_chunks[i], address, file.split(".")[0], i)
 					# Note the time of sending frame
 					self.connections[address]['start_time'][i % (self.ws + 1)] = round(time.time())
@@ -395,7 +373,6 @@ class Host:
 				i -= step_back
 				wait_frames_ack = 0
 				print(f"NACK!")
-
 		print("Done!")
 
 
@@ -409,7 +386,6 @@ class Connector:
 		self.handshake(host1, host2)
 
 	def handshake(self, host1, host2):
-		attempts = 0
 		while True:
 			try:
 				print("SYNC1")
@@ -420,9 +396,6 @@ class Connector:
 				break
 			except Timeout as e:
 				print(e)
-				attempts += 1
-				if attempts == CONNECTION_ATTEMPTS:
-					raise LimitSentAttemptsException
 
 
 def create_host(config_file):
@@ -446,15 +419,11 @@ def create_host(config_file):
 
 
 def host2_script(host):
-	p = "pic.jpg"
-	t = "test.txt"
 	host.send_file("vid.MP4", ("localhost", 3088))
 
 
 def host1_script(host):
-	p = "pic.jpg"
-	t = "test.txt"
-	host.send_file(p, ("localhost", 9999))
+	host.send_file("pic.jpg", ("localhost", 9999))
 
 
 def send_log(filename, seqno, status, ackno):
