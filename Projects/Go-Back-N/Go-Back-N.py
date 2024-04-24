@@ -15,23 +15,9 @@ from socket import socket, AF_INET, SOCK_DGRAM, timeout
 
 # I Consider that all host use the same data size
 
-class NACKException(Exception):
-	def __init__(self, message="NACK"):
-		super().__init__(message)
-
 
 class Timeout(Exception):
 	def __init__(self, message="timeout!"):
-		super().__init__(message)
-
-
-class NoConnectionException(Exception):
-	def __init__(self, message="No existing such connection"):
-		super().__init__(message)
-
-
-class ExistingConnectionException(Exception):
-	def __init__(self, message="Connection with this server already exists"):
 		super().__init__(message)
 
 
@@ -61,7 +47,7 @@ class FrameType(Enum):
 
 
 class PDU:
-	def __init__(self, data=None):
+	def __init__(self, data: bytes = None):
 		self.data: bytes = data
 		self.status = PDUSendStatus.NEW
 		self.type = None
@@ -87,14 +73,14 @@ class PDU:
 		message = f"{filename}"
 		return PDU().pack(message, FrameType.ACK)
 
-	def calc_checksum(self, data) -> bytes:
-		return zlib.adler32(data).to_bytes(CHECKSUM_SIZE, byteorder='big')
-
 	def get_seqno(self) -> str:
 		if self.type == FrameType.DATA:
 			return self.message.split(b'|', maxsplit=1)[0].decode()
 
-	def pack(self, data, frame_type: FrameType) -> 'PDU':
+	def calc_checksum(self, data: bytes) -> bytes:
+		return zlib.adler32(data).to_bytes(CHECKSUM_SIZE, byteorder='big')
+
+	def pack(self, data: str | bytes, frame_type: FrameType) -> 'PDU':
 		def make_header():
 			match frame_type:
 				case FrameType.HANDSHAKE:
@@ -151,7 +137,16 @@ class Socket:
 
 
 class Host:
-	def __init__(self, address, ws, data_size, init_seqno, timer, lost_rate, error_rate, folder):
+	def __init__(self,
+		address: tuple[str, int],
+		ws: int,
+		data_size: int,
+		init_seqno: int,
+		timer: int,
+		lost_rate: int,
+		error_rate: int,
+		folder: str
+	):
 		self.InitSeqNo = init_seqno
 		self.lost_rate = lost_rate
 		self.error_rate = error_rate
@@ -167,10 +162,6 @@ class Host:
 		self.next_seqno: {tuple: int} = {}
 
 	def add_connection(self, host_address: tuple[str, int]):
-		if host_address in self.connections.keys():
-			print("Already connected")
-			raise ExistingConnectionException
-
 		self.connections[host_address] = {
 			"ws": 0,
 			"socket": Socket(self.address, host_address, self.frame_size, self.timer),
@@ -279,19 +270,14 @@ class Host:
 				timeouts_number += 1
 
 	def await_ack(self, address: tuple[str, int], passed_time: int = 0):
-		if (self.connections[address]['GetACK'].wait(self.timer - passed_time) or
-				self.connections[address]['NACK'].wait(self.timer - passed_time)):
-			if self.connections[address]['GetACK'].is_set():
-				self.connections[address]['GetACK'].clear()
-			else:
-				self.connections[address]['NACK'].clear()
-				raise NACKException
+		if self.connections[address]['GetACK'].wait(self.timer - passed_time):
+			self.connections[address]['GetACK'].clear()
 		else:
 			raise Timeout
 
 	def send_sync(self, address: tuple[str, int]):
 		if address not in self.connections.keys():
-			raise NoConnectionException
+			raise Exception("No such connection!")
 		frame = PDU().pack(str(self.ws + 1), FrameType.HANDSHAKE)
 		self.send_frame(frame, address)
 		self.await_ack(address)
@@ -321,13 +307,12 @@ class Host:
 	def send_file(self, file: str, address: tuple[str, int]):
 		# Check existing connection
 		if address not in self.connections.keys():
-			raise NoConnectionException
+			raise Exception("No such connection!")
 
 		# Divide file by frames
 		file_size = os.path.getsize(file)
 		start_frame = PDU().pack(f"{file}|{file_size}", FrameType.START)
 		data_chunks = [start_frame]
-
 		with open(file, "rb") as f:
 			for i in range((file_size + self.frame_size - 1) // self.frame_size):
 				data = f.read(self.frame_size)
@@ -367,12 +352,6 @@ class Host:
 				i -= step_back
 				wait_frames_ack = 0
 				print(f"Timeout frame!")
-			except NACKException:
-				for k in range(1, step_back + 1):
-					data_chunks[i - k].status = PDUSendStatus.RT
-				i -= step_back
-				wait_frames_ack = 0
-				print(f"NACK!")
 		print("Done!")
 
 
@@ -423,7 +402,9 @@ def host2_script(host):
 
 
 def host1_script(host):
+	a = time.time()
 	host.send_file("pic.jpg", ("localhost", 9999))
+	print(time.time() - a)
 
 
 def send_log(filename, seqno, status, ackno):
@@ -476,4 +457,4 @@ if __name__ == '__main__':
 	thread1 = Thread(target=host1_script, args=(host1,))
 	thread2 = Thread(target=host2_script, args=(host2,))
 	thread2.start()
-	thread1.start()
+# thread1.start()
