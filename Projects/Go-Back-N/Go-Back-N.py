@@ -166,7 +166,6 @@ class Host:
 			"ws": 0,
 			"socket": Socket(self.address, host_address, self.frame_size, self.timer),
 			"GetACK": Event(),
-			"NACK": Event(),
 			"start_time": [0 for _ in range(self.ws + 1)]
 		}
 		self.receive_thread = Thread(target=self.receive, args=(host_address,))
@@ -177,7 +176,7 @@ class Host:
 		# handshake: WS
 		# start:     filename|file_size
 		# data:      seqno|data
-		# ack:       data ("SYN", "SYN|{ws}", seqno)
+		# ack:       data ("SYN", seqno)
 		if not frame.check():
 			print(f"Mismatch checksum!")
 			if frame.type in [FrameType.START, FrameType.DATA]:
@@ -239,7 +238,6 @@ class Host:
 				seqno = int(seqno.decode())
 				# We record the data if only we got frame with expected seqno
 				# Otherwise, it's a duplicate
-
 				if sender_address in self.files.keys() and seqno == self.files[sender_address]["seqno"]:
 					rec_log("rec_" + self.files[sender_address]["filename"], self.files[sender_address]["seqno"],
 							seqno, PDURecStatus.OK.name)
@@ -300,7 +298,7 @@ class Host:
 			error_frame = copy.deepcopy(frame)
 			error_frame.noise()
 			self.connections[addr]['socket'].send(error_frame)
-		# print(f"Error!")
+			# print(f"Error!")
 		else:
 			self.connections[addr]['socket'].send(frame)
 
