@@ -120,7 +120,6 @@
 %    \end{table}
 
 
-
 %    \newpage
 %    \section{Task}\label{sec:task-3}
 %    Suppose we have the forwarding tables shown in Table 5-2 for nodes A and F in a network where all
@@ -135,9 +134,8 @@
 %     \newpage
 
 
-
-
     \setcounter{section}{3}
+
 
     \section{Task}
     An unfragmented IP packet, shown in Fig 5-2(a), has 1400 bytes of data and a 20-byte IP header.
@@ -150,27 +148,28 @@
     \end{enumerate}
 
     \begin{center}
-        \includegraphics[width=1\textwidth]{figs/Task4}
+        \includegraphics[width=1.1\textwidth]{figs/Task4}
     \end{center}
 
     \newpage
+
     \subsection{Solution}
     Internet protocol (IP) uses nontransparent fragmentation process to pass packets via routers.
     Hence, it treats each fragmented packet as original packet and does not reassemble fragments at intermediate routers.
+
     \paragraph{1.} After router RB receives first and second fragmented packets, it treats them separately and
     divides each of them to two smaller packets.
     Third packet is less than MTU of RB. Therefore, it is transmitted the same as it was.
     In total, router RB transmits 5 packets.
 
     \begin{center}
-        \includegraphics[width=0.75\textwidth]{figs/Sol4-1}
+        \includegraphics[width=0.85\textwidth]{figs/Sol4-1}
     \end{center}
 
     \paragraph{2.}
     The initial packet size is 1400 bytes.
     Thus, if it was directly send to router RB, the number of packets would be:
     $1400/380 \approx 3.6 = 4$ packets.
-
 
 
 \end{document}
