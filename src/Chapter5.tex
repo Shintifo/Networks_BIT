@@ -137,7 +137,7 @@
     \setcounter{section}{3}
 
 
-    \section{Task}
+    \section{Task}\label{sec:task-4}
     An unfragmented IP packet, shown in Fig 5-2(a), has 1400 bytes of data and a 20-byte IP header.
     When the packet arrives at router RA, which has an MTU of 532 bytes, it has to be fragmented.
     The 3 fragmented packets are shown in Fig 5-2(b).
@@ -148,7 +148,7 @@
     \end{enumerate}
 
     \begin{center}
-        \includegraphics[width=1.1\textwidth]{figs/Task4}
+        \includegraphics[width=1\textwidth]{figs/Task4}
     \end{center}
 
     \newpage
@@ -170,6 +170,154 @@
     The initial packet size is 1400 bytes.
     Thus, if it was directly send to router RB, the number of packets would be:
     $1400/380 \approx 3.6 = 4$ packets.
+    \newpage
+
+
+    \section{Task}\label{sec:task-5}
+    What is the maximum bandwidth at which an IP host can send 576-byte packets
+    without having the Ident field wrap around within 60 seconds?
+    Suppose that IP’s maximum segment lifetime (MSL) is 60 seconds;
+    that is, delayed packets can arrive up to 60 seconds late but no later.
+    What might happen if this bandwidth were exceeded?
+
+    \subsection{Solution}
+    IP packets contain Ident field with 16 bits len.
+    So in total we have $2^{16}$ unique Indents.
+    As they shouldn't be repeated during transmission, we obtain the following formulas:
+
+    \begin{subequations}
+        \begin{equation}
+            \frac{576 * 2^{16} * 8}{60} \approx 5033164.8 \hspace{4} bps
+        \end{equation}
+
+        \begin{equation}
+            5033164.8 \hspace{4} bps = 629145.6 \hspace{4} Bps = 614.4 \hspace{4} KiBps
+        \end{equation}
+    \end{subequations}
+
+    \paragraph{Answer:} 614 KiBps
+    \newpage
+
+
+    \section{Task}\label{sec:task-6}
+    An organization has been assigned the prefix 200.1.1.0/24 and wants to form subnets for four
+    departments, with hosts as follows:
+    \vspace{15}
+
+    \begin{minipage}{.5\textwidth}
+        \begin{itemize}
+            \item Department A 72 hosts
+            \item Department B 35 hosts
+        \end{itemize}
+    \end{minipage}
+    \begin{minipage}{.5\textwidth}
+        \begin{itemize}
+            \item Department C 20 hosts
+            \item Department D 18 hosts
+        \end{itemize}
+    \end{minipage}
+
+    \begin{enumerate}
+        \item Give a possible arrangement of subnet masks to make this possible.
+        \item Suggest what the organization might do if department D grows to 34 hosts.
+    \end{enumerate}
+
+    \subsection{Solution}
+    Each department has different number of supporting hosts,
+    so we need to preserve enough bits in IP address for each department.
+
+    \paragraph{1.}
+
+    \textbf{Department A:}
+    \begin{center}
+        72 hosts $< 2^7 \longrightarrow$ \textbf{Range:} 200.1.1.0 -- 200.1.1.127; \textbf{Mask:} 255.255.255.0 \\
+        11001000 00000001 00000001 0$\mid$xxxxxxx \\
+    \end{center}
+
+    \textbf{Department B:}
+    \begin{center}
+        35 $< 2^6 \longrightarrow$ \textbf{Range:} 200.1.1.128 -- 200.1.1.191; \textbf{Mask:} 255.255.255.128 \\
+        11001000 00000001 00000001 10$\mid$xxxxxx \\
+    \end{center}
+
+    \textbf{Department C:}
+    \begin{center}
+        20 $< 2^5 \longrightarrow$ \textbf{Range:} 200.1.1.192 -- 200.1.1.223; \textbf{Mask:} 255.255.255.192 \\
+        11001000 00000001 00000001 111$\mid$xxxxx\\
+    \end{center}
+
+    \textbf{Department D:}
+    \begin{center}
+        18 $< 2^5 \longrightarrow$ \textbf{Range:} 200.1.1.224 -- 200.1.1.256; \textbf{Mask:} 255.255.255.224 \\
+        11001000 00000001 00000001 110$\mid$xxxxx \\
+    \end{center}
+
+    \begin{center}
+        \includegraphics[width=0.75\textwidth]{figs/Sol6-1}
+    \end{center}
+
+    \paragraph{2.}
+    If the number of hosts in department D increases up to 34 host, subnets should be reassigned.
+    For this case, department D requires subnet with prefix '/26'.
+    However, department B already takes subnet with prefix '/26' and department A with prefix '/25'.
+    Therefore, there will be no subnet for department C.
+    Thus, it is not possible to arrange subnets for such four department in network with prefix '/24'
+
+    \newpage
+
+
+    \section{Task}
+    A router has just received the following new IP addresses: 57.6.96.0/21, 57.6.104.0/21, 57.6.112.0/21,
+    and 57.6.120.0/21.
+    If all of them use the same outgoing line, can they be aggregated?
+    If so, to what?
+    If not, why not?
+
+    \subsection{Solution}
+    Firstly, let us convert all addresses to binary format:
+
+    \begin{center}
+        \textbf{57.6.96.0/21:} 00111001 \hspace{3} 00000110 \hspace{3}01100000 \hspace{3}00000000 \\
+        \textbf{57.6.104.0/21:} 00111001 \hspace{3} 00000110 \hspace{3}01110000 \hspace{3}00000000 \\
+        \textbf{57.6.112.0/21:} 00111001 \hspace{3} 00000110 \hspace{3}01111000 \hspace{3}00000000 \\
+        \textbf{57.6.120.0/21:} 00111001 \hspace{3}00000110 \hspace{3}01111100 \hspace{3}00000000 \\
+    \end{center}
+
+    The aggregated IP address is 57.6.96.0 with a subnet mask of /19.
+    \newpage
+
+
+    \section{Task}
+    Given the network in Fig 5-3, determine the routing table of R2 by aggregating the routes.
+    The main entries of the routing table are shown in Table 5-3.
+
+     \begin{center}
+        \includegraphics[width=0.75\textwidth]{figs/task8}
+    \end{center}
+
+    \subsection{Solution}
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|c|c|}
+            \hline
+            \textbf{Destination} & \textbf{Mask} & \textbf{Next-hop} & \textbf{Interface} & \textbf{Metric} \\
+            \hline
+            \hline
+            211.14.5.0 & 255.255.255.220 & 211.14.3.2 & S0 &  2 \\
+            \hline
+            211.14.5.128 & 255.255.255.220 & 211.14.3.2 & S0 & 2 \\
+            \hline
+            211.14.5.220 & 255.25.255.220 & Directly & E1 & 1 \\
+            \hline
+            196.17.20.128 & 255.255.255.220 & 196.17.20.128 & E0 & 1 \\
+            \hline
+            196.17.20.0 & 255.255.255.220 & 196.17.24.2 & S1 & 2 \\
+            \hline
+            196.17.21.0 & 255.255.255.220 & 196.17.24.2 & S1 & 2 \\
+            \hline
+        \end{tabular}\label{tab:table-8}
+    \end{table}
 
 
 \end{document}
