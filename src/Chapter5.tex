@@ -28,113 +28,110 @@
 
 % Document
 \begin{document}
-%    \section{Task}\label{sec:task-1}
-%    Explain the difference between routing, forwarding, and switching.
-%
-%    \subsection{Solution}
-%    \begin{itemize}
-%        \item \textbf{Routing} - Process responsible for filling and updating routing tables;
-%        makes a decision which router to use.
-%        \item \textbf{Forwarding} - Decides what to do after packet arrives.
-%        \item \textbf{Switching} - Process of switching packets between devices on the same network
-%    \end{itemize}
-%    \newpage
+    \section{Task}\label{sec:task-1}
+    Explain the difference between routing, forwarding, and switching.
+
+    \subsection{Solution}
+    \begin{itemize}
+        \item \textbf{Routing} - Process responsible for filling and updating routing tables;
+        makes a decision which router to use.
+        \item \textbf{Forwarding} - Decides what to do after packet arrives.
+        \item \textbf{Switching} - Process of switching packets between devices on the same network
+    \end{itemize}
+    \newpage
 
 
-%    \section{Task}\label{sec:task-2}
-%    For the network given in Fig 5-1, give global distance–vector tables like Table 5-1 (where D is the
-%    distance, N is neighbor) when
-%    \begin{enumerate}
-%        \item Each node knows only the distances to its immediate neighbors
-%        \item Each node has reported the information it had in the preceding step to its immediate neighbors.
-%        \item Step (2) happens a second time.
-%    \end{enumerate}
-%
-%    \begin{center}
-%        \includegraphics[width=0.6\textwidth]{figs/graph}
-%    \end{center}
-%
-%    \subsection{Solution}
-%
-%
-%    \begin{table}[H]
-%        \begin{adjustbox}{center}
-%            \begin{tabular}{|c|C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}|}
-%                \hline
-%                & \multicolumn{12}{|c|}{Distances and neighbours to each node} \\ \cline{2-13}
-%                Node & \multicolumn{2}{|c||}{A} & \multicolumn{2}{|c||}{B} & \multicolumn{2}{|c||}{C} & \multicolumn{2}{|c||}{D} & \multicolumn{2}{|c||}{E} & \multicolumn{2}{|c|}{F} \\ \cline{2-13}
-%                & D & N & D & N & D & N & D & N & D & N & D & N &
-%                \hline
-%                A & 0 & -- & 2 & B & ? & -- & 5 & D & ? & -- & ? & -- &
-%                B & 2 & A & 0 & -- & 2 & C & ? & -- & 1 & E & ? & -- &
-%                C & ? & -- & 2 & B & 0 & -- & 2 & D & ? & -- & 3 & F &
-%                D & 5 & A & ? & -- & 2 & C & 0 & -- & ? & -- & ? & -- &
-%                E & ? & -- & 1 & B & ? & -- & ? & -- & 0 & -- & 3 & F &
-%                F & ? & -- & ? & -- & 3 & C & ? & -- & 3 & E & 0 & -- &
-%                \hline
-%            \end{tabular}\label{tab:table-a}
-%        \end{adjustbox}
-%        \caption{Solution to point 1}
-%    \end{table}
-%
-%
-%    \begin{table}[H]
-%        \begin{adjustbox}{center}
-%            \begin{tabular}{|c|C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}|}
-%                \hline
-%                & \multicolumn{12}{|c|}{Distances and neighbours to each node} \\ \cline{2-13}
-%                Node & \multicolumn{2}{|c||}{A} & \multicolumn{2}{|c||}{B} & \multicolumn{2}{|c||}{C} & \multicolumn{2}{|c||}{D} & \multicolumn{2}{|c||}{E} & \multicolumn{2}{|c|}{F} \\ \cline{2-13}
-%                & D & N & D & N & D & N & D & N & D & N & D & N &
-%                \hline
-%                A & 0 & -- & 2 & B & 4 & B & 5 & D & 3 & B & 6 & E &
-%                B & 2 & A & 0 & -- & 2 & C & 4 & C & 1 & E & 4 & E &
-%                C & 4 & B & 2 & B & 0 & -- & 2 & D & 3 & B & 3 & F &
-%                D & 5 & A & 4 & C & 2 & C & 0 & -- & ? & -- & 5 & C &
-%                E & 3 & B & 1 & B & 3 & B & ? & -- & 0 & -- & 3 & F &
-%                F & ? & -- & 4 & E & 3 & C & 5 & C & 3 & E & 0 & -- &
-%                \hline
-%            \end{tabular}\label{tab:table-b}
-%        \end{adjustbox}
-%        \caption{Solution to point 2}
-%    \end{table}
-%
-%
-%    \begin{table}[H]
-%        \begin{adjustbox}{center}
-%            \begin{tabular}{|c|C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}|}
-%                \hline
-%                & \multicolumn{12}{|c|}{Distances and neighbours to each node} \\ \cline{2-13}
-%                Node & \multicolumn{2}{|c||}{A} & \multicolumn{2}{|c||}{B} & \multicolumn{2}{|c||}{C} & \multicolumn{2}{|c||}{D} & \multicolumn{2}{|c||}{E} & \multicolumn{2}{|c|}{F} \\ \cline{2-13}
-%                & D & N & D & N & D & N & D & N & D & N & D & N &
-%                \hline
-%                A & 0 & -- & 2 & B & 4 & B & 5 & D & 3 & B & ? & -- &
-%                B & 2 & A & 0 & -- & 2 & C & 4 & C & 1 & E & 4 & E &
-%                C & 4 & B & 2 & B & 0 & -- & 2 & D & 3 & B & 3 & F &
-%                D & 5 & A & 4 & C & 2 & C & 0 & -- & 5 & B & 5 & C &
-%                E & 3 & B & 1 & B & 3 & B & 5 & C & 0 & -- & 3 & F &
-%                F & 6 & B & 4 & E & 3 & C & 5 & C & 3 & E & 0 & -- &
-%                \hline
-%            \end{tabular}\label{tab:table-c}
-%        \end{adjustbox}
-%        \caption{Solution to point 3}
-%    \end{table}
+    \section{Task}\label{sec:task-2}
+    For the network given in Fig 5-1, give global distance–vector tables like Table 5-1 (where D is the
+    distance, N is neighbor) when
+    \begin{enumerate}
+        \item Each node knows only the distances to its immediate neighbors
+        \item Each node has reported the information it had in the preceding step to its immediate neighbors.
+        \item Step (2) happens a second time.
+    \end{enumerate}
+
+    \begin{center}
+        \includegraphics[width=0.6\textwidth]{figs/graph}
+    \end{center}
+
+    \subsection{Solution}
 
 
-%    \newpage
-%    \section{Task}\label{sec:task-3}
-%    Suppose we have the forwarding tables shown in Table 5-2 for nodes A and F in a network where all
-%    links have cost 1.
-%    Give a diagram of the smallest network consistent with these tables.
-%
-%    \subsection{Solution}
-%
-%     \begin{center}
-%        \includegraphics[width=0.6\textwidth]{figs/task3}
-%    \end{center}
-%     \newpage
+    \begin{table}[H]
+        \begin{adjustbox}{center}
+            \begin{tabular}{|c|C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}|}
+                \hline
+                & \multicolumn{12}{|c|}{Distances and neighbours to each node} \\ \cline{2-13}
+                Node & \multicolumn{2}{|c||}{A} & \multicolumn{2}{|c||}{B} & \multicolumn{2}{|c||}{C} & \multicolumn{2}{|c||}{D} & \multicolumn{2}{|c||}{E} & \multicolumn{2}{|c|}{F} \\ \cline{2-13}
+                & D & N & D & N & D & N & D & N & D & N & D & N &
+                \hline
+                A & 0 & -- & 2 & B & ? & -- & 5 & D & ? & -- & ? & -- &
+                B & 2 & A & 0 & -- & 2 & C & ? & -- & 1 & E & ? & -- &
+                C & ? & -- & 2 & B & 0 & -- & 2 & D & ? & -- & 3 & F &
+                D & 5 & A & ? & -- & 2 & C & 0 & -- & ? & -- & ? & -- &
+                E & ? & -- & 1 & B & ? & -- & ? & -- & 0 & -- & 3 & F &
+                F & ? & -- & ? & -- & 3 & C & ? & -- & 3 & E & 0 & -- &
+                \hline
+            \end{tabular}\label{tab:table-a}
+        \end{adjustbox}
+        \caption{Solution to point 1}
+    \end{table}
 
 
-    \setcounter{section}{3}
+    \begin{table}[H]
+        \begin{adjustbox}{center}
+            \begin{tabular}{|c|C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}|}
+                \hline
+                & \multicolumn{12}{|c|}{Distances and neighbours to each node} \\ \cline{2-13}
+                Node & \multicolumn{2}{|c||}{A} & \multicolumn{2}{|c||}{B} & \multicolumn{2}{|c||}{C} & \multicolumn{2}{|c||}{D} & \multicolumn{2}{|c||}{E} & \multicolumn{2}{|c|}{F} \\ \cline{2-13}
+                & D & N & D & N & D & N & D & N & D & N & D & N &
+                \hline
+                A & 0 & -- & 2 & B & 4 & B & 5 & D & 3 & B & 6 & E &
+                B & 2 & A & 0 & -- & 2 & C & 4 & C & 1 & E & 4 & E &
+                C & 4 & B & 2 & B & 0 & -- & 2 & D & 3 & B & 3 & F &
+                D & 5 & A & 4 & C & 2 & C & 0 & -- & ? & -- & 5 & C &
+                E & 3 & B & 1 & B & 3 & B & ? & -- & 0 & -- & 3 & F &
+                F & ? & -- & 4 & E & 3 & C & 5 & C & 3 & E & 0 & -- &
+                \hline
+            \end{tabular}\label{tab:table-b}
+        \end{adjustbox}
+        \caption{Solution to point 2}
+    \end{table}
+
+
+    \begin{table}[H]
+        \begin{adjustbox}{center}
+            \begin{tabular}{|c|C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}||C{0.7cm}|C{0.7cm}|}
+                \hline
+                & \multicolumn{12}{|c|}{Distances and neighbours to each node} \\ \cline{2-13}
+                Node & \multicolumn{2}{|c||}{A} & \multicolumn{2}{|c||}{B} & \multicolumn{2}{|c||}{C} & \multicolumn{2}{|c||}{D} & \multicolumn{2}{|c||}{E} & \multicolumn{2}{|c|}{F} \\ \cline{2-13}
+                & D & N & D & N & D & N & D & N & D & N & D & N &
+                \hline
+                A & 0 & -- & 2 & B & 4 & B & 5 & D & 3 & B & ? & -- &
+                B & 2 & A & 0 & -- & 2 & C & 4 & C & 1 & E & 4 & E &
+                C & 4 & B & 2 & B & 0 & -- & 2 & D & 3 & B & 3 & F &
+                D & 5 & A & 4 & C & 2 & C & 0 & -- & 5 & B & 5 & C &
+                E & 3 & B & 1 & B & 3 & B & 5 & C & 0 & -- & 3 & F &
+                F & 6 & B & 4 & E & 3 & C & 5 & C & 3 & E & 0 & -- &
+                \hline
+            \end{tabular}\label{tab:table-c}
+        \end{adjustbox}
+        \caption{Solution to point 3}
+    \end{table}
+
+
+    \newpage
+    \section{Task}\label{sec:task-3}
+    Suppose we have the forwarding tables shown in Table 5-2 for nodes A and F in a network where all
+    links have cost 1.
+    Give a diagram of the smallest network consistent with these tables.
+
+    \subsection{Solution}
+
+     \begin{center}
+        \includegraphics[width=0.6\textwidth]{figs/task3}
+    \end{center}
+     \newpage
 
 
     \section{Task}\label{sec:task-4}
