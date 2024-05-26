@@ -1,0 +1,171 @@
+%! Author = t
+%! Date = 5/24/24
+
+% Preamble
+\documentclass[11pt]{article}
+
+% Packages
+\usepackage{amsmath}
+\usepackage{titlesec}
+\usepackage{enumitem}
+
+
+\titleformat{\section}[hang]{\fontsize{20}{24}\selectfont\filcenter}{\Roman{section}}{1em}{}
+
+\title{Networks Assignment\\ Chapter 6}
+\author{Braiko Timofei\\1820243088}
+\date{\today}
+\maketitle
+\newpage
+
+% Document
+\begin{document}
+    \section{Task}\label{sec:task_1}
+    Let us divide Ethernet frames into components.
+    AS we use Ethernet II frames it consists of
+    destination address, source address, type, payload and CRC
+
+    \begin{enumerate}[label=(\alph*)]
+        \item \textbf{What are the source and destination MAC addresses?} \\
+        Destination MAC-address -- 34:c9:3d:1d:e1:e7 \\ Source MAC-address -- f0:33:e5:7a:cf:ed
+        \item \textbf{What are the source and destination IP addresses?} \\
+        IP addresses are stored somewhere in Payload part.
+        As we have IPv4 (0x0800) type, we can find them in IPv4 header. \\
+        Destination IP-address -- 10.0.6.202 \\ Source IP-address -- 10.62.33.236
+        \item \textbf{What protocol type is the payload carried by IP packets?}
+        IPv4, because type field is 0x0800
+        \item \textbf{What is the source port number? How would you classify the source port?} \\
+        After the IPv4 header goes TCP header, that contains port numbers.
+        Source Port -- 443. This port is used for HTTPS.
+        \item \textbf{What is the destination port number? How would you classify the destination port?}  \\
+        Destination Port -- 3533. This port is random and not assigned to something.
+    \end{enumerate}
+    \newpage
+
+
+    \section{Task}\label{sec:task_2}
+    You are hired to design a reliable byte-stream protocol that uses a sliding window (like TCP).
+    This protocol will run over a 1-Gbps network.
+    The RTT of the network is 100 ms, and the maximum segment lifetime is 30 seconds.
+    How many bits would you include in the AdvertisedWindow and SequenceNum fields of your protocol header?
+
+    \subsection{Solution}
+    The AdvertisedWindow field indicates the maximum amount of data (in bytes) that the receiver is willing to accept.
+    To calculate the size of the AdvertisedWindow field, we need to understand the bandwidth-delay product,
+    which tells us the amount of data that can be in transit at any given time.
+
+
+    \begin{subequations}
+        \begin{equation}
+            T = 10^9 \times 0.1 = 12.5 \times 10^6 bytes
+        \end{equation}
+
+        \begin{equation}
+            2^n >= 12.5 \times 10^6
+        \end{equation}
+
+        \begin{equation}
+            n >= 23.25 \approx 24 bits
+        \end{equation}
+    \end{subequations}
+
+    The total number of bytes that can be transmitted in the MSL period:
+    \begin{subequations}
+        \begin{equation}
+            2^n >= 12.5 \times 10^6 \times 30
+        \end{equation}
+
+        \begin{equation}
+            2^n >= 3.75 \times 10^9
+        \end{equation}
+
+        \begin{equation}
+            n >= 31.8 \approx 32 bits
+        \end{equation}
+    \end{subequations}
+
+    \paragraph{Answers:} 24 bits and 32 bits
+    \newpage
+
+
+    \section{Task}\label{sec:task_3}
+    \begin{enumerate}[label=(\alph*)]
+        \item \textbf{Identify the intervals of time when TCP slow start is operating.}\\
+        TCP slow start operates from 1st round till 6th transmission round, because of exponential grow on this segment.
+        \item \textbf{Identify the intervals of time when TCP congestion avoidance is operating.} \\
+        TCP congestion avoidance occurs at intervals from 6 to 16 and from 17 to 22 transmission rounds
+        \item \textbf{After the 16th transmission round, is segment loss detected by a triple duplicate ACK or by a timeout?} \\
+        Loss detected by a triple duplicate ACK because congestion window size decreased by half. Otherwise, congestion window size dropped to 1.
+        \item \textbf{After the 22nd transmission round, is segment loss detected by a triple duplicate ACK or by a timeout?} \\
+        It's detected by timeout, because congestion window size dropped to 1.
+        \item \textbf{What is the initial value of ssthresh at the first transmission round?} \\
+        The initial values of ssthresh was 32 approximately, as the slow start stopped when congestion window size reached 32 segments.
+        \item \textbf{What is the value of ssthresh at the 18th transmission round?} \\
+        It's exactly 25 segments.
+        \item \textbf{What is the value of ssthresh at the 24th transmission round?} \\
+        It's approximately 2 segments.
+        \item \textbf{During what transmission round is the 70th segment sent?} \\
+        During 7th transmission round (1+2+4+8+16+32+33 $>$ 70).
+        \item \textbf{Assuming a packet loss is detected after the 26th round by the receipt of a triple duplicate ACK, what will be the values of the congestion window size and of ssthresh?} \\
+        Both ssthresh and congestion window size would be decreased by a half from previous round. Thus, it will be 4, assuming that it was 8 at 26th round.
+        \item \textbf{Suppose TCP Tahoe is used (instead of TCP Reno), and assume that triple duplicate ACKs are received at the 16th round. What are the ssthresh and the congestion window size at the 19th round?} \\
+        Congestion window size will be set to 1 and ssthresh will be 21.
+        \item \textbf{Again suppose TCP Tahoe is used, and there is a timeout event at 22nd round. How many packets have been sent out from 17th round till 22nd round, inclusive.} \\
+        In TCP Tahoe after any segment loss the congestion window size decrease to 1.
+        Hence, 1 + 2 + 4 + 8 + 16 + 1 = 32 packets have been sent.
+    \end{enumerate}
+    \newpage
+
+
+    \section{Task}\label{sec:task_4}
+    \begin{enumerate}[label=(\alph*)]
+        \item \textbf{How many RTTs does it take until slow start opens the send window to 1 MB?} \\
+        \begin{subequations}
+            \begin{equation}
+                2^n * 1KB = 1000KB
+            \end{equation}
+            \begin{equation}
+                2^n = 1000 KB
+            \end{equation}
+            \begin{equation}
+                n = 10
+            \end{equation}
+        \end{subequations}
+        We need 10 RTTs for the slow start.
+        \item \textbf{How many RTTs does it take to send the file?} \\
+        After 10 RTTs we send 1023 packets. Therefore:
+        \begin{subequations}
+            \begin{equation}
+                Total\_packets = \frac{10^7}{10^3} = 10^4
+            \end{equation}
+            Packets needed to be sent after slow start:
+            \begin{equation}
+                10^4 - 1023 = 8977
+            \end{equation}
+            \begin{equation}
+                \frac{8977}{1024} = 8.76 \approx 9
+            \end{equation}
+        \end{subequations}
+        So in total we need 9 + 10 = \textbf{19 RTTs} to send whole file
+        \item \textbf{If the time to send the file is given by the number of required RTTs multiplied by the link latency,
+            what is the effective throughput for the transfer? What percentage of the link bandwidth is utilized?} \\
+        \begin{subequations}
+            Time to send the whole file:
+            \begin{equation}
+                19 RTTs * 0.05s = 0.95 seconds
+            \end{equation}
+            The throughput of the network is:
+            \begin{equation}
+                \frac{10^7 \times 8}{0.95} = 82.24  \times 10^6 bps
+            \end{equation}
+            Hence, utilization of the network:
+            \begin{equation}
+                Throughput / Bandwidth = \frac{82.24  \times 10^6}{10^9} * 100\% \approx 8.24\%
+            \end{equation}
+        \end{subequations}
+
+        \paragraph{Answers:} 10 RTTs, 19 RTTs, 8.24\%
+    \end{enumerate}
+
+
+\end{document}
