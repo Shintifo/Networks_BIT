@@ -1,0 +1,118 @@
+%! Author = t
+%! Date = 5/24/24
+
+% Preamble
+\documentclass[11pt]{article}
+
+% Packages
+\usepackage{amsmath}
+\usepackage{titlesec}
+\usepackage{enumitem}
+
+
+\titleformat{\section}[hang]{\fontsize{20}{24}\selectfont\filcenter}{\Roman{section}}{1em}{}
+
+\title{Networks Assignment\\ Chapter 7}
+\author{Braiko Timofei\\1820243088}
+\date{\today}
+\maketitle
+\newpage
+
+% Document
+\begin{document}
+    \section{Task}\label{sec:task_1}
+    File Transfer Protocol (FTP) uses \_\_\_\_\_\_\_ for control connection and \_\_\_\_\_\_\_ for data connection.
+    \begin{enumerate}[label=\Alph*.]
+        \item Stateless connection. Non persistent TCP connection
+        \item Persistent TCP connection, non-persistent TCP connection
+        \item Non-persistent TCP connection, persistent TCP connection
+        \item FTP is a connection less protocol
+    \end{enumerate}
+
+    \subsection{Solution}
+    File Transfer Protocol (FTP) uses Persistent TCP connection for control connection and non-persistent TCP connection for data connection.
+
+    \paragraph{Answer:} B
+    \newpage
+
+
+    \section{Task}\label{sec:task_2}
+    Consider different activities related to email. \\
+    s1: Send an email from a mail client to a mail server \\
+    s2: Download an email from mailbox server to a mail client \\
+    s3: Checking email in a web browser \_\_\_\_\_\_ is the application level protocol used in each activity. \\
+
+    \begin{enumerate}[label=\textbf{\Alph*.}]
+        \item s1: HTTP , s2: SMTP , s3: POP
+        \item s1: SMTP , s2: FTP , s3: HTTP
+        \item s1: SMTP , s2: POP , s3: HTTP
+        \item s1: POP , s2: SMTP , s3: IMAP
+    \end{enumerate}
+
+    \paragraph{Answer:}  C) SMTP, POP, HTTP
+    \newpage
+
+
+    \section{Task}\label{sec:task_3}
+    Suppose within your Web browser you click on a link to obtain a Web page.
+    The IP address for the associated URL is not cached in your local host,
+    so a DNS lookup is necessary to obtain the IP address.
+    Suppose that n DNS servers are visited before your host receives the IP address from DNS;
+    the successive visits incur an RTT of $RTT_1$, ..., $RTT_n$.
+    Further suppose that the Web page associated with the link contains exactly one object,
+    consisting of a small amount of HTML text.
+    Let RTT denote the RTT between the local host and the server containing the object.
+    Assuming zero transmission time of the object,
+    how much time elapses from when the client clicks on the link until the client receives the object?
+
+    \subsection{Solution}
+    To look the final IP address through multiple DNS servers takes:
+    \begin{subequations}
+        \begin{equation}
+            \sum_{i=1}^{n} RTT_{i}
+        \end{equation}
+        Finally, to request the HTML object from the server takes RTT sec.
+        Hence, the total time is:
+        \begin{equation}
+            \sum_{i=1}^{n} RTT_{i} + RTT
+        \end{equation}
+    \end{subequations}
+    \newpage
+
+
+    \section{Task}\label{sec:task_4}
+    Referring to Problem 3, suppose the HTML file references eight very small objects on the same server.
+    Neglecting transmission times, how much time elapses with
+    \begin{enumerate}[label=(\alph*)]
+        \item \textbf{Non-persistent HTTP with no parallel TCP connections?} \\
+        I consider that host required firstly obtain the base file containing text.
+        \begin{subequations}
+            To get base file:
+            \begin{equation}
+                \sum_{i=1}^{n} RTT_{i} + RTT
+            \end{equation}
+            Per one object we need 4RRTs.
+            Thus, in total:
+            \begin{equation}
+                \sum_{i=1}^{n} RTT_{i} + 33RTT
+            \end{equation}
+        \end{subequations}
+        \item \textbf{Non-persistent HTTP with the browser configured for 5 parallel connections?} \\
+        \begin{subequations}
+            \begin{equation}
+                \sum_{i=1}^{n} RTT_{i} + RTT + 4RTT(5 objects) + 4RTT(3 objects)
+            \end{equation}
+            \begin{equation}
+                \sum_{i=1}^{n} RTT_{i} + 9RTT
+            \end{equation}
+        \end{subequations}
+        \item \textbf{Persistent HTTP?} \\
+        \begin{subequations}
+            Per one object we need 2RTTs. Therefore, in total it requires:
+            \begin{equation}
+                \sum_{i=1}^{n} RTT_{i} + 17RTT
+            \end{equation}
+        \end{subequations}
+    \end{enumerate}
+
+\end{document}
