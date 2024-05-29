@@ -1,4 +1,4 @@
-from socket import socket, AF_INET, SOCK_STREAM, timeout
+from socket import socket, AF_INET, SOCK_STREAM, timeout, SOL_SOCKET, SO_REUSEADDR
 from threading import Thread
 import os
 import subprocess
@@ -19,21 +19,21 @@ class Server:
 	def __init__(self):
 		self.threads: [Thread] = []
 		self.sock = socket(AF_INET, SOCK_STREAM)
+		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.sock.bind(('localhost', PORT))
-		self.working_thread = Thread(target=self.main_thread)
-		self.working_thread.start()
 
 		self.client_thread = Thread(target=self.handler)
 
-	def __del__(self) -> None:
+	def __del__(self):
 		self.sock.close()
 		print("CLOOOOOOOOOOOSE")
 
-	def main_thread(self):
+	def start(self):
 		self.sock.listen()
 		while True:
 			client_sock, addr = self.sock.accept()
 			if len(self.threads) == MAX_CONNECTIONS:
+				print("Too much!!!!!!!!!!!!!")
 				oldest_thread = self.threads.pop(0)
 				oldest_thread.join()
 			thread = Thread(target=self.handler, args=(client_sock,))
@@ -90,8 +90,12 @@ class Server:
 			case RequestType.HEAD:
 				pass
 		client_sock.close()
-		print("Closed socket!")
+		print("Closed client socket!")
 
 
 if __name__ == "__main__":
-	server = Server()
+	try:
+		server = Server()
+		server.start()
+	except KeyboardInterrupt:
+		print("That's it")
