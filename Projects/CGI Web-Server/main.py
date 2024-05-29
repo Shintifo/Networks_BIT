@@ -1,7 +1,12 @@
 from socket import socket, AF_INET, SOCK_STREAM, timeout
 from threading import Thread
+import os
+import subprocess
 
 MAX_CONNECTIONS = 10
+PORT = 8888
+
+BASE_PATH = os.path.join(os.getcwd(), "webroot")
 
 
 class RequestType:
@@ -12,19 +17,28 @@ class RequestType:
 
 class Server:
 	def __init__(self):
+		self.threads: [Thread] = []
 		self.sock = socket(AF_INET, SOCK_STREAM)
-		self.sock.bind(('localhost', 7777))
+		self.sock.bind(('localhost', PORT))
 		self.working_thread = Thread(target=self.main_thread)
 		self.working_thread.start()
 
-		self.client_sock = None
 		self.client_thread = Thread(target=self.handler)
+
+	def __del__(self) -> None:
+		self.sock.close()
+		print("CLOOOOOOOOOOOSE")
 
 	def main_thread(self):
 		self.sock.listen()
 		while True:
-			self.client_sock, addr = self.sock.accept()
-			self.client_thread.start()
+			client_sock, addr = self.sock.accept()
+			if len(self.threads) == MAX_CONNECTIONS:
+				oldest_thread = self.threads.pop(0)
+				oldest_thread.join()
+			thread = Thread(target=self.handler, args=(client_sock,))
+			thread.start()
+			self.threads.append(thread)
 
 	def parse_request(self, request):
 		req_lines = request.split('\r\n')
@@ -42,26 +56,41 @@ class Server:
 
 		return req_dict
 
-	def handler(self):
-		try:
-			while True:
-				data = self.client_sock.recv(1024)
-				print(data)
-				data = data.decode('utf-8')
-				data = self.parse_request(data)
-				match data['Method']:
-					case RequestType.GET:
-						if data['Path'] == '/':
+	def handler(self, client_sock):
+		data = client_sock.recv(1024)
+		print(data)
+		data = data.decode('utf-8')
+		data = self.parse_request(data)
+		match data['Method']:
+			case RequestType.GET:
+				print("Yes it's get")
+				if data['Path'] == '/':
+					file_path = os.path.join(BASE_PATH, "index.html")
+					file_size = os.path.getsize(file_path)
 
-					case RequestType.POST:
-						pass
-					case RequestType.HEAD:
-						pass
-		except KeyboardInterrupt:
-			self.client_sock.close()
-			self.sock.close()
-			exit()
-		# GET /index.html
+					response_header = f'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {file_size}\r\n\r\n'
+					client_sock.send(response_header.encode())
+
+					file = open(file_path, "rb")
+					client_sock.sendfile(file, 0)
+					file.close()
+					print("Send!")
+				# elif data['Path'] == '/cgi-bin/number.py':
+				# 	ans = subprocess.call([f"sudo python3 {os.path.join(BASE_PATH, 'cgi-bin/number.py')}"],
+				# 						  universal_newlines=True)
+				#
+				# 	response_header = f'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {len(ans)}\r\n\r\n'
+				# 	client_sock.send(response_header.encode())
+				# 	client_sock.send(ans.to_bytes())
+				else:
+					client_sock.send("Oops!".encode('utf-8'))
+					print("Or not")
+			case RequestType.POST:
+				pass
+			case RequestType.HEAD:
+				pass
+		client_sock.close()
+		print("Closed socket!")
 
 
 if __name__ == "__main__":
