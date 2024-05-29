@@ -1,0 +1,61 @@
+<html>
+<head>
+    <title>GfG Test Example Form</title>
+</head>
+<body>
+<h1>CGI-Example Form</h1>
+<h3><p>Information Required.</p></h3>
+<form action="/cgi-bin/submit_questionnaire.py" method="Post">
+    <table>
+        <tr>
+            <td>Student ID:</td>
+            <td><input type="text" name="student_id">
+            <td>
+        </tr>
+
+        <tr>
+            <td>Name:</td>
+            <td><input type="text" name="name">
+            <td>
+        </tr>
+
+        <tr>
+            <td>Gender:</td>
+            <td><select name="gender" size="1">
+                <option>Male</option>
+                <option>Female</option>
+                <option>Attack Helicopter</option>
+            </select></td>
+        </tr>
+
+        <tr>
+            <td>Major:</td>
+            <td><select name="major" size="1">
+                <option>Computer Science</option>
+                <option>Psychology</option>
+                <option>Business Administration</option>
+                <option>Engineering</option>
+                <option>Biology</option>
+                <option>Nursing</option>
+            </select></td>
+        </tr>
+
+        <tr>
+            <td>Sports:</td>
+            <td><input type="radio" name="sport"
+                       value="Cricket">Cricket
+                <input type="radio" name="sport"
+                       value="Hockey">Hockey
+                <input type="radio" name="sport"
+                       value="Table Tennis">TableTennis
+                <input type="radio" name="sport"
+                       value="Football">Football
+            </td>
+        </tr>
+        <tr>
+            <td colspan="2"><input type="submit"></td>
+        </tr>
+    </table>
+</form>
+</body>
+</html>

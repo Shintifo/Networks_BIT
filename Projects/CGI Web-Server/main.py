@@ -9,7 +9,7 @@ PORT = 8888
 
 BASE_PATH = os.path.join(os.getcwd(), "webroot")
 
-
+# TODO QST
 # TODO Log files
 
 
@@ -24,11 +24,15 @@ class Server:
 		self.sock = socket(AF_INET, SOCK_STREAM)
 		self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self.sock.bind(('localhost', PORT))
-
 		self.threads: [Thread] = []
+
+		# self.create_database()
 
 	def __del__(self):
 		self.sock.close()
+
+	def create_database(self):
+		subprocess.run([os.path.join(os.getcwd(), "CreateDB.py")], check=True)
 
 	def start(self):
 		self.sock.listen()
@@ -115,20 +119,22 @@ class Server:
 		client_sock.close()
 
 	def cgi(self, data, client_sock):
-		file_path = BASE_PATH + "/" + data["Path"]
+		file_path = BASE_PATH + data["Path"]
 		match data["Method"]:
 			case RequestType.GET:
 				if not os.path.exists(file_path):
 					self.open_not_found(client_sock)
 					client_sock.close()
 					return
-
-				process = subprocess.Popen([BASE_PATH + data['Path']], stdout=subprocess.PIPE,
-										   stderr=subprocess.PIPE)
-				stdout, stderr = process.communicate()
-				ans = stdout.decode()
+				script = data['Path'][9:]
+				if script == 'number.py':
+					result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
+				elif script == 'submit_questionnaire.py':
+					result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
+				else:
+					result = "Incorrect script".encode()
 				self.send_header(client_sock, 200)
-				client_sock.send(ans.encode())
+				client_sock.send(result)
 
 			case RequestType.HEAD:
 				if not os.path.exists(file_path):
@@ -146,12 +152,14 @@ class Server:
 					result = subprocess.run(
 						[
 							'bash',
-							BASE_PATH + data['Path'],
+							file_path,
 							parameters['num1'],
 							parameters['num2'],
 							unquote(parameters['operator'])
 						],
 						capture_output=True, text=False).stdout
+				elif script == 'submit_questionnaire.py':
+					result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
 				else:
 					result = "Incorrect script".encode()
 				self.send_header(client_sock, 200)
