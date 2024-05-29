@@ -7,38 +7,17 @@ MAX_CONNECTIONS = 10
 PORT = 8888
 
 BASE_PATH = os.path.join(os.getcwd(), "webroot")
+print(BASE_PATH)
+
+
+# TODO POST
+# TODO Log files
 
 
 class RequestType:
 	GET = "GET"
 	POST = "POST"
 	HEAD = "HEAD"
-
-
-class CGI:
-	def __init__(self):
-		pass
-
-	@staticmethod
-	def do(data, client_sock):
-		# Dynamic pages
-		message = "No Implementation yet".encode('utf-8')
-		response_header = (f'HTTP/1.1 404 Not Found\r\n'
-						   f'Content-Type: text/html\r\n'
-						   f'Content-Length: {len(message)}\r\n\r\n')
-		client_sock.send(response_header.encode())
-		client_sock.send(message)
-
-		match data["Method"]:
-			case RequestType.GET:
-				pass
-			# elif data['Path'] == '/cgi-bin/number.py':
-			# 	ans = subprocess.call([f"sudo python3 {os.path.join(BASE_PATH, data['Path'])}"],
-			# 						  universal_newlines=True)
-			#
-			# 	response_header = f'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {len(ans)}\r\n\r\n'
-			# 	client_sock.send(response_header.encode())
-			# 	client_sock.send(ans.to_bytes())
 
 
 class Server:
@@ -48,7 +27,6 @@ class Server:
 		self.sock.bind(('localhost', PORT))
 
 		self.threads: [Thread] = []
-		self.cgi = CGI
 
 	def __del__(self):
 		self.sock.close()
@@ -57,9 +35,7 @@ class Server:
 		self.sock.listen()
 		while True:
 			client_sock, addr = self.sock.accept()
-
 			if len(self.threads) == MAX_CONNECTIONS:
-				print("Too much!!!!!!!!!!!!!")
 				oldest_thread = self.threads.pop(0)
 				oldest_thread.join()
 
@@ -85,7 +61,7 @@ class Server:
 		return req_dict
 
 	@staticmethod
-	def send_not_found(client_sock):
+	def open_not_found(client_sock):
 		path = os.path.join(BASE_PATH, '404.html')
 		file_size = os.path.getsize(path)
 		response_header = (f'HTTP/1.1 404 Not Found\r\n'
@@ -102,26 +78,24 @@ class Server:
 		data = data.decode('utf-8')
 		data = self.parse_request(data)
 
-		file_path = os.path.join(BASE_PATH, data['Path'])
-		if not os.path.exists(file_path):
-			self.send_not_found(client_sock)
-			client_sock.close()
-			return
-
 		if 'cgi-bin' in data['Path']:
-			self.cgi.do(data=data, client_sock=client_sock)
-			client_sock.close()
-			return
+			self.cgi(data=data, client_sock=client_sock)
+		else:
+			self.static_web(data=data, client_sock=client_sock)
 
-		# Else it is static web page
+	def static_web(self, data, client_sock):
+		file_path = BASE_PATH + "/" + data["Path"]
 		match data['Method']:
 			case RequestType.GET:
-				print("Yes it's get")
+				if not os.path.exists(file_path):
+					self.open_not_found(client_sock)
+					client_sock.close()
+					return
+
 				if data['Path'] == '/':
 					file_path = os.path.join(BASE_PATH, "index.html")
 					file_size = os.path.getsize(file_path)
 				else:
-					# TODO: Block access to 404.html
 					file_size = os.path.getsize(file_path)
 
 				response_header = (f'HTTP/1.1 200 OK\r\n'
@@ -133,9 +107,42 @@ class Server:
 				client_sock.sendfile(file, 0)
 				file.close()
 				print("Send!")
-			case RequestType.POST:
-				pass
 			case RequestType.HEAD:
+				if not os.path.exists(file_path):
+					response_header = (f'HTTP/1.1 404 Not Found\r\n'
+									   f'Content-Type: text/html\r\n\r\n')
+				else:
+					response_header = (f'HTTP/1.1 200 OK\r\n'
+									   f'Content-Type: text/html\r\n\r\n')
+				client_sock.send(response_header.encode())
+
+		client_sock.close()
+
+	def cgi(self, data, client_sock):
+		file_path = BASE_PATH + "/" + data["Path"]
+		match data["Method"]:
+			case RequestType.GET:
+				if not os.path.exists(file_path):
+					self.open_not_found(client_sock)
+					client_sock.close()
+					return
+
+				process = subprocess.Popen([BASE_PATH + data['Path']], stdout=subprocess.PIPE,
+										   stderr=subprocess.PIPE)
+				stdout, stderr = process.communicate()
+				ans = stdout.decode()
+				response_header = f'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {len(ans)}\r\n\r\n'
+				client_sock.send(response_header.encode())
+				client_sock.send(ans.encode())
+			case RequestType.HEAD:
+				if not os.path.exists(file_path):
+					response_header = (f'HTTP/1.1 404 Not Found\r\n'
+									   f'Content-Type: text/html\r\n\r\n')
+				else:
+					response_header = (f'HTTP/1.1 200 OK\r\n'
+									   f'Content-Type: text/html\r\n\r\n')
+				client_sock.send(response_header.encode())
+			case RequestType.POST:
 				pass
 		client_sock.close()
 

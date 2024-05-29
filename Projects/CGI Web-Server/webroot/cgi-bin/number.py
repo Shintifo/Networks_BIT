@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import random
 
-print(random.randint(0,100))
+print(random.randint(0, 100))
