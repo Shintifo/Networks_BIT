@@ -73,6 +73,7 @@ class Server:
 		path = os.path.join(BASE_PATH, '404.html')
 		with open(path, "rb") as file:
 			client_sock.sendfile(file, 0)
+		client_sock.close()
 
 	def send_header(self, client_sock, header_code):
 		response_header = ''
@@ -102,14 +103,12 @@ class Server:
 			case RequestType.GET:
 				if not os.path.exists(file_path):
 					self.open_not_found(client_sock)
-					client_sock.close()
 					return
 
 				if data['Path'] == '/':
 					file_path = os.path.join(BASE_PATH, "index.html")
 
 				self.send_header(client_sock, 200)
-
 				with open(file_path, "rb") as file:
 					client_sock.sendfile(file, 0)
 			case RequestType.HEAD:
@@ -126,15 +125,13 @@ class Server:
 			case RequestType.GET:
 				if not os.path.exists(file_path):
 					self.open_not_found(client_sock)
-					client_sock.close()
 					return
-				script = data['Path'][9:]
-				if script == 'number.py':
-					result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
-				elif script == 'submit_questionnaire.py':
-					result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
-				else:
-					result = "Incorrect script".encode()
+				result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
+				# script = data['Path'][9:]
+				# if script == 'number.py':
+				# 	result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
+				# else:
+				# 	result = "Incorrect script".encode()
 				self.send_header(client_sock, 200)
 				client_sock.send(result)
 
@@ -145,34 +142,17 @@ class Server:
 					self.send_header(client_sock, 200)
 
 			case RequestType.POST:
-				script = data['Path'][9:]
-				if script == 'calculator.sh':
-					parameters = {}
-					for line in data['Parameters'].split('&'):
-						key, value = line.split('=', 1)
-						parameters[key] = value
-					result = subprocess.run(
-						[
-							'bash',
-							file_path,
-							parameters['num1'],
-							parameters['num2'],
-							unquote(parameters['operator'])
-						],
-						capture_output=True, text=False).stdout
-				elif script == 'submit_questionnaire.py':
-					parameters = ""
-					p = {}
-					for line in data['Parameters'].split('&'):
-						key, value = line.split('=', 1)
-						parameters += f" {value}"
-						p[key] = value
-					result = subprocess.run(
-						["python", file_path, p['student_id'], p['name'], p['gender'], p['major'], p['sport']],
-						capture_output=True, text=False).stdout
-					print(result)
-				else:
-					result = "Incorrect script".encode()
+				ext = data['Path'].split(".")[-1]
+				match ext:
+					case 'py':
+						command = "python"
+					case 'sh':
+						command = "bash"
+				args = [command, file_path]
+				for line in data['Parameters'].split('&'):
+					_, value = line.split('=', 1)
+					args.append(unquote(value))
+				result = subprocess.run(args, capture_output=True, text=False).stdout
 				self.send_header(client_sock, 200)
 				client_sock.send(result)
 

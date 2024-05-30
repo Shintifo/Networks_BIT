@@ -44,3 +44,8 @@ if __name__ == "__main__":
 	mydb.commit()
 	mycursor.close()
 	mydb.close()
+
+	path = os.path.join(os.getcwd(), "webroot/submit_thanks.html")
+
+	with open(path, "rb") as file:
+		print(file.read().replace(b"\n", b''))
