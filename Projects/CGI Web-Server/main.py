@@ -9,6 +9,7 @@ PORT = 8888
 
 BASE_PATH = os.path.join(os.getcwd(), "webroot")
 
+
 # TODO QST
 # TODO Log files
 
@@ -26,13 +27,14 @@ class Server:
 		self.sock.bind(('localhost', PORT))
 		self.threads: [Thread] = []
 
-		# self.create_database()
+		self.create_database()
 
 	def __del__(self):
 		self.sock.close()
 
 	def create_database(self):
-		subprocess.run([os.path.join(os.getcwd(), "CreateDB.py")], check=True)
+		if not os.path.exists(os.path.join(os.getcwd(), "students.db")):
+			subprocess.run(["python", os.path.join(os.getcwd(), "CreateDB.py")], capture_output=True, text=True)
 
 	def start(self):
 		self.sock.listen()
@@ -159,7 +161,16 @@ class Server:
 						],
 						capture_output=True, text=False).stdout
 				elif script == 'submit_questionnaire.py':
-					result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
+					parameters = ""
+					p = {}
+					for line in data['Parameters'].split('&'):
+						key, value = line.split('=', 1)
+						parameters += f" {value}"
+						p[key] = value
+					result = subprocess.run(
+						["python", file_path, p['student_id'], p['name'], p['gender'], p['major'], p['sport']],
+						capture_output=True, text=False).stdout
+					print(result)
 				else:
 					result = "Incorrect script".encode()
 				self.send_header(client_sock, 200)

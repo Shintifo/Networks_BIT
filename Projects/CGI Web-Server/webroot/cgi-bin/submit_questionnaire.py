@@ -1,31 +1,46 @@
-import mysql.connector
+import os
+import sqlite3
 import argparse
+import subprocess
 
 
 def argument_parser():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("id", type=int, help="Student ID")
 	parser.add_argument("name", type=str, help="Name")
-	parser.add_argument("Gender", type=str, help="Gender")
-	parser.add_argument("Major", type=str, help="Major")
-	parser.add_argument("Sport", type=str, help="Sport")
+	parser.add_argument("gender", type=str, help="Gender")
+	parser.add_argument("major", type=str, help="Major")
+	parser.add_argument("sport", type=str, help="Sport")
+
 	args = parser.parse_args()
+	vals = []
+	for key, value in args.__dict__.items():
+		if isinstance(value, str):
+			value = value.replace("+", " ")
+		vals.append(value)
+	return vals
 
-	return (args.id, args.name, args.Gender, args.Major, args.Sport)
+
+def connect():
+	if not os.path.exists(os.path.join(os.getcwd(), "students.db")):
+		res = subprocess.run(["python", os.path.join(os.getcwd(), "CreateDB.py")],
+							 capture_output=True, text=True).stdout
+
+	mydb = sqlite3.connect("students.db")
+	mycursor = mydb.cursor()
+	return mydb, mycursor
 
 
-mydb = mysql.connector.connect(host="localhost", user="root", database="QST")
-mycursor = mydb.cursor()
+if __name__ == "__main__":
+	mydb, mycursor = connect()
 
-insert_query = (
-	"INSERT INTO results ("
-	"STUDENT_ID, NAME, GENDER, MAJOR, SPORT)"
-	"VALUES (%s, %s, %s, %s, %s)"
-)
+	vals = argument_parser()
+	insert_query = (
+		"INSERT INTO results (STUDENT_ID, NAME, GENDER, MAJOR, SPORT) "
+		"VALUES (?, ?, ?, ?, ?)"
+	)
 
-vals = argument_parser()
-
-mycursor.execute(insert_query, vals)
-mycursor.close()
-mydb.commit()
-mydb.close()
+	mycursor.execute(insert_query, vals)
+	mydb.commit()
+	mycursor.close()
+	mydb.close()
