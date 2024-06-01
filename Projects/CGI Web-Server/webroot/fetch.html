@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Styled HTML Form</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        form {
+            width: 300px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin: 0 auto;
+            box-shadow: 2px 2px 5px #ccc;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        input[type="text"] {
+            width: 93%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+
+        input[type="submit"] {
+            width: 100%;
+            padding: 10px;
+            background-color: #007BFF;
+            color: #fff;
+            border: 0;
+            margin-top: 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+<form action="/cgi-bin/fetch_results.py" method="Post">
+    <label for="stringValue">Enter a string value:</label>
+    <input type="text" id="stringValue" name="stringValue">
+    <input type="submit" value="Submit">
+</form>
+</body>
+</html>

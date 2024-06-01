@@ -1,17 +1,16 @@
+import datetime
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from threading import Thread
 import os
 import subprocess
 from urllib.parse import unquote
+import logging
 
 MAX_CONNECTIONS = 10
 PORT = 8888
 
 BASE_PATH = os.path.join(os.getcwd(), "webroot")
-
-
-# TODO QST
-# TODO Log files
+LOG_PATH = os.path.join(BASE_PATH, "log/requests.log")
 
 
 class RequestType:
@@ -44,7 +43,7 @@ class Server:
 				oldest_thread = self.threads.pop(0)
 				oldest_thread.join()
 
-			thread = Thread(target=self.handler, args=(client_sock,))
+			thread = Thread(target=self.handler, args=(client_sock, addr,))
 			thread.start()
 			self.threads.append(thread)
 
@@ -64,7 +63,13 @@ class Server:
 			req_dict[key] = value
 
 		if req_lines[-1] != '':
-			req_dict["Parameters"] = req_lines[-1]
+			params = []
+			for line in req_lines[-1].split('&'):
+				_, value = line.split('=', 1)
+				if value is None or value == '':
+					continue
+				params.append(unquote(value))
+			req_dict["Parameters"] = params
 
 		return req_dict
 
@@ -73,7 +78,6 @@ class Server:
 		path = os.path.join(BASE_PATH, '404.html')
 		with open(path, "rb") as file:
 			client_sock.sendfile(file, 0)
-		client_sock.close()
 
 	def send_header(self, client_sock, header_code):
 		response_header = ''
@@ -87,76 +91,113 @@ class Server:
 
 		client_sock.send(response_header.encode())
 
-	def handler(self, client_sock):
-		data = client_sock.recv(1024)
-		print(data)
-		data = data.decode('utf-8')
-		data = self.parse_request(data)
-		if 'cgi-bin' in data['Path']:
-			self.cgi(data=data, client_sock=client_sock)
-		else:
-			self.static_web(data=data, client_sock=client_sock)
+	def get_log(self):
+		path = LOG_PATH
 
-	def static_web(self, data, client_sock):
+		logger = logging.getLogger(path)
+		logger.setLevel(logging.INFO)
+
+		file_handler = logging.FileHandler(f'{path}')
+		file_handler.setLevel(logging.INFO)
+
+		logger.addHandler(file_handler)
+		return logger
+
+	def handler(self, client_sock, addr):
+		data = client_sock.recv(1024).decode('utf-8')
+		# print(data.encode())
+		if data == '':
+			return
+
+		data = self.parse_request(data)
+		log_info = f"{addr[0]} -- {data['User-Agent']} -- {addr[1]} -- {datetime.UTC} -- {data['Method']} -- {data['Path']}"
+
+		if 'cgi-bin' in data['Path']:
+			log_info = self.cgi(data=data, client_sock=client_sock, log_info=log_info)
+		else:
+			log_info = self.static_web(data=data, client_sock=client_sock, log_info=log_info)
+		client_sock.close()
+
+		if "Referer" in data.keys():
+			log_info += f" -- {data['Referer']}"
+
+		logger = self.get_log()
+		logger.info(log_info)
+
+	def static_web(self, data, client_sock, log_info):
 		file_path = BASE_PATH + "/" + data["Path"]
 		match data['Method']:
 			case RequestType.GET:
 				if not os.path.exists(file_path):
 					self.open_not_found(client_sock)
-					return
+					log_info += f" -- 404"
+					return log_info
 
 				if data['Path'] == '/':
 					file_path = os.path.join(BASE_PATH, "index.html")
 
 				self.send_header(client_sock, 200)
+				log_info += f"-- 200"
+				log_info += f"-- {os.path.getsize(file_path)}"
 				with open(file_path, "rb") as file:
 					client_sock.sendfile(file, 0)
 			case RequestType.HEAD:
 				if not os.path.exists(file_path):
 					self.send_header(client_sock, 404)
+					log_info += f" -- 404"
 				else:
 					self.send_header(client_sock, 200)
+					log_info += f" -- 200"
+		return log_info
 
-		client_sock.close()
-
-	def cgi(self, data, client_sock):
+	def cgi(self, data, client_sock, log_info):
 		file_path = BASE_PATH + data["Path"]
 		match data["Method"]:
 			case RequestType.GET:
 				if not os.path.exists(file_path):
 					self.open_not_found(client_sock)
-					return
+					log_info += f" -- 404"
+					return log_info
 				result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
-				# script = data['Path'][9:]
-				# if script == 'number.py':
-				# 	result = subprocess.run(["python", file_path], capture_output=True, text=False).stdout
-				# else:
-				# 	result = "Incorrect script".encode()
+				log_info += f" -- 200"
+				log_info += f" -- {os.path.getsize(file_path)}"
 				self.send_header(client_sock, 200)
 				client_sock.send(result)
 
 			case RequestType.HEAD:
 				if not os.path.exists(file_path):
 					self.send_header(client_sock, 404)
+					log_info += f" -- 404"
 				else:
 					self.send_header(client_sock, 200)
+					log_info += f" -- 200"
 
 			case RequestType.POST:
+				if not os.path.exists(file_path):
+					self.open_not_found(client_sock)
+					log_info += f" -- 404"
+					return log_info
+
 				ext = data['Path'].split(".")[-1]
 				match ext:
 					case 'py':
 						command = "python"
 					case 'sh':
 						command = "bash"
-				args = [command, file_path]
-				for line in data['Parameters'].split('&'):
-					_, value = line.split('=', 1)
-					args.append(unquote(value))
-				result = subprocess.run(args, capture_output=True, text=False).stdout
+				result = subprocess.run(
+					[command, file_path] + data['Parameters'],
+					capture_output=True, text=False).stdout
 				self.send_header(client_sock, 200)
-				client_sock.send(result)
 
-		client_sock.close()
+				log_info += f" -- 200"
+				log_info += f" -- {os.path.getsize(file_path)}"
+				if b'.html' in result:
+					path = os.path.join(BASE_PATH, result.decode())
+					with open(path, "rb") as file:
+						client_sock.sendfile(file)
+				else:
+					client_sock.send(result)
+		return log_info
 
 
 if __name__ == "__main__":
@@ -164,4 +205,4 @@ if __name__ == "__main__":
 		server = Server()
 		server.start()
 	except KeyboardInterrupt:
-		print("That's it")
+		print("Shutting down...")
